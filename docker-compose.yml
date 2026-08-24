@@ -1,0 +1,31 @@
+services:
+  dsh:
+    build:
+      context: .
+      args:
+        DSH_VERSION: ${DSH_VERSION:-latest}
+    image: dsh-web:local
+    init: true
+    stdin_open: true
+    tty: true
+    ports:
+      # Loopback only: the harness runs shell commands, never expose it to the LAN.
+      # 13080 is the in-container socat bridge; dsh itself stays on 127.0.0.1:3080.
+      - "127.0.0.1:${DSH_PORT:-3080}:13080"
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      OPENROUTER_MODELS: ${OPENROUTER_MODELS:-}
+      DSH_PORT: ${DSH_PORT:-3080}
+      DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-}
+    volumes:
+      # Work volume: the folder this compose file lives in.
+      - ./:/workspace
+      # Harness config ($DSH_HOME): profiles, plugins, settings, credentials.
+      - ./.harness:/dsh
+      # Dependency tree (/opt/dsh), seeded from the image on first start so
+      # plugins and deps persist without reinstalling per container.
+      - ./.DHC:/opt/dsh
+    working_dir: /workspace
+    command: ["web"]

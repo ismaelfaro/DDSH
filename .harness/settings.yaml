@@ -1,0 +1,15 @@
+llm-pi-ai:
+  providers:
+    # managed by dsh entrypoint; configure via OPENROUTER_* env
+    openrouter:
+      apiKeyEnv: OPENROUTER_API_KEY
+      api: openai-completions
+      baseURL: https://openrouter.ai/api/v1
+      models:
+        - id: z-ai/glm-5.2:free
+        - id: poolside/laguna-s-2.1:free
+        - id: nvidia/nemotron-3.5-lightning:free
+        - id: cohere/north-mini-code:free
+agent-default-model:
+  provider: openrouter
+  model: poolside/laguna-s-2.1:free
