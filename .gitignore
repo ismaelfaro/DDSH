@@ -1,1 +1,5 @@
 .env
+.harness/
+.DHC/
+hermes/.harness/
+hermes/.DHC/
