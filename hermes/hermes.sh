@@ -17,6 +17,7 @@
 #   ./hermes.sh            # serve http://localhost:9119 over $PWD
 #   HERMES_PORT=9200 ./hermes.sh
 #   ./hermes.sh chat       # any other hermes command
+#   HERMES_SETUP=always ./hermes.sh   # re-run the provider/model picker
 set -euo pipefail
 
 IMAGE="${HERMES_IMAGE:-hermes-web:local}"
@@ -43,7 +44,7 @@ fi
 
 # Rebuild when the image is missing OR Dockerfile/entrypoint.sh changed since
 # the last build (fingerprint label), so an outdated image can't shadow fixes.
-FPRINT="$(cat "$HERE/Dockerfile" "$HERE/entrypoint.sh" | shasum -a 256 | cut -d' ' -f1)"
+FPRINT="$(cat "$HERE/Dockerfile" "$HERE/entrypoint.sh" "$HERE/configure-model.sh" | shasum -a 256 | cut -d' ' -f1)"
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1 \
    || [ "$(docker image inspect -f '{{ index .Config.Labels "hermes-fingerprint" }}' "$IMAGE" 2>/dev/null || true)" != "$FPRINT" ]; then
   echo "building $IMAGE ..." >&2
@@ -53,6 +54,23 @@ fi
 # Interactive only when there is a terminal to attach to.
 TTY=()
 [ -t 0 ] && TTY=(-it)
+
+# First run in a terminal with nothing configured yet: pick provider + model
+# in two steps and write them to .harness/config.yaml. Everything afterwards
+# is owned by the dashboard, `hermes model`, or the agent itself.
+if [ -t 0 ] && [ "${HERMES_SETUP:-auto}" != "never" ] \
+   && { [ "${HERMES_SETUP:-auto}" = "always" ] \
+        || ! grep -qE '^[[:space:]]+default:' "$HARNESS_DIR/config.yaml" 2>/dev/null; }; then
+  docker run --rm -it --init \
+    -e NOUS_API_KEY -e OPENAI_API_KEY -e ANTHROPIC_API_KEY \
+    -e OPENROUTER_API_KEY -e OPENROUTER_BASE_URL -e DEEPSEEK_API_KEY \
+    -e GEMINI_API_KEY -e MINIMAX_API_KEY \
+    -e HERMES_BASE_URL -e HERMES_CONTEXT_LENGTH -e HERMES_FALLBACKS \
+    -v "$HARNESS_DIR:/hermes" \
+    -v "$DHC_DIR:/opt/hermes" \
+    --entrypoint /usr/local/bin/entrypoint.sh \
+    "$IMAGE" setup-model || echo "hermes: setup skipped; falling back to the environment" >&2
+fi
 
 NAME="hermes-$(basename "$PWD")-$PORT"
 
@@ -73,7 +91,17 @@ exec docker run --rm --init ${TTY[@]+"${TTY[@]}"} \
   -e ANTHROPIC_API_KEY \
   -e OPENROUTER_API_KEY \
   -e OPENROUTER_BASE_URL \
-  -e OPENROUTER_MODELS \
+  -e DEEPSEEK_API_KEY \
+  -e HERMES_PROVIDER \
+  -e HERMES_MODEL \
+  -e HERMES_MODELS \
+  -e HERMES_MODEL_PREFER \
+  -e HERMES_MODEL_REWRITE \
+  -e HERMES_BASE_URL \
+  -e HERMES_CONTEXT_LENGTH \
+  -e HERMES_FALLBACKS \
+  -e GEMINI_API_KEY \
+  -e MINIMAX_API_KEY \
   -e HERMES_PORT="$PORT" \
   -v "$PWD:/workspace" \
   -v "$HARNESS_DIR:/hermes" \

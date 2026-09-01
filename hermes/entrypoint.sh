@@ -30,6 +30,16 @@ if [ ! -x /opt/hermes/bin/hermes ]; then
   cp -a /opt/hermes-seed/. /opt/hermes/
 fi
 
+# `setup-model` is the interactive two-step picker hermes.sh runs on a fresh
+# .harness; it writes the config and exits without starting anything.
+if [ "${1:-}" = "setup-model" ]; then
+  exec /usr/local/bin/configure-model.sh --interactive
+fi
+
+# Otherwise resolve provider + model from the environment and persist them to
+# $HERMES_HOME/config.yaml (see configure-model.sh for the rules).
+/usr/local/bin/configure-model.sh || true
+
 if [ "${1:-}" = "dashboard" ]; then
   shift
   # The dashboard stores API keys and ships no auth, so it must never bind

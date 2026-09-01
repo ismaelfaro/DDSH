@@ -49,7 +49,7 @@ RUN uv venv /opt/hermes \
     && /opt/hermes/bin/hermes --version \
     && cp -a /opt/hermes/. /opt/hermes-seed/
 
-COPY --chown=hermes:hermes entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=hermes:hermes entrypoint.sh configure-model.sh /usr/local/bin/
 
 WORKDIR /workspace
 EXPOSE 19119
