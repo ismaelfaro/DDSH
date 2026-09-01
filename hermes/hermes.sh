@@ -18,6 +18,7 @@
 #   HERMES_PORT=9200 ./hermes.sh
 #   ./hermes.sh chat       # any other hermes command
 #   HERMES_SETUP=always ./hermes.sh   # re-run the provider/model picker
+#   HERMES_DETACH=1 ./hermes.sh       # run in the background
 set -euo pipefail
 
 IMAGE="${HERMES_IMAGE:-hermes-web:local}"
@@ -55,6 +56,14 @@ fi
 TTY=()
 [ -t 0 ] && TTY=(-it)
 
+# HERMES_DETACH=1 leaves the dashboard running in the background instead of
+# holding the terminal (stop it with `docker rm -f <name>`).
+RUN_MODE=()
+if [ -n "${HERMES_DETACH:-}" ]; then
+  RUN_MODE=(-d)
+  TTY=()
+fi
+
 # First run in a terminal with nothing configured yet: pick provider + model
 # in two steps and write them to .harness/config.yaml. Everything afterwards
 # is owned by the dashboard, `hermes model`, or the agent itself.
@@ -83,7 +92,7 @@ if ! docker rm "$NAME" >/dev/null 2>&1 && docker container inspect "$NAME" >/dev
   exit 1
 fi
 
-exec docker run --rm --init ${TTY[@]+"${TTY[@]}"} \
+exec docker run --rm --init ${RUN_MODE[@]+"${RUN_MODE[@]}"} ${TTY[@]+"${TTY[@]}"} \
   --name "$NAME" \
   -p "127.0.0.1:${PORT}:19119" \
   -e NOUS_API_KEY \

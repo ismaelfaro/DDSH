@@ -14,7 +14,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# Node.js: the dashboard's chat pane runs the TUI in a pty, and the TUI (plus
+# the browser tools) needs `node` on PATH. Without it Hermes falls back to
+# downloading its own copy into $HERMES_HOME and then still cannot find it,
+# looping "Install now? [Y/n]" at a prompt no one can answer.
+FROM node:22-bookworm-slim AS node
+
 FROM python:3.12-slim-bookworm
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node --version && npm --version
 
 # Tooling the agent expects in its shell (bash tool, git, search, http),
 # plus socat for the published-port bridge and ffmpeg for voice notes.
@@ -27,7 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV HERMES_HOME=/hermes
 # The venv lives in /opt/hermes, a persistent mount seeded from the image, so
 # packages Hermes installs for itself survive container removal.
-ENV PATH=/opt/hermes/bin:$PATH
+# $HERMES_HOME/node/bin: whatever Hermes installed for itself stays usable.
+ENV PATH=/opt/hermes/bin:/hermes/node/bin:$PATH
 
 RUN useradd -m -u 1000 hermes \
     && mkdir -p /hermes /workspace /opt/hermes /opt/hermes-seed \
