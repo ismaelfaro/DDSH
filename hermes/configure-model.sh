@@ -312,8 +312,19 @@ case "${HERMES_MODEL_REWRITE:-auto}" in
     ;;
 esac
 
+warn_missing_key() {
+  # A configured provider with no key reaches the agent as the unhelpful
+  # "No LLM provider configured" / "provider is not authenticated". Say which
+  # variable is missing while the reason is still visible.
+  [ -n "${api_key:-}" ] && return 0
+  [ "$provider" = "custom" ] && return 0
+  echo "hermes: WARNING - ${key_var:-the provider API key} is not set, so $provider cannot authenticate." >&2
+  echo "hermes:           Restart with it exported, e.g. ${key_var:-API_KEY}=... ./hermes.sh" >&2
+}
+
 if [ "$write" = "no" ]; then
   echo "hermes: keeping the model already configured in $CONFIG" >&2
+  warn_missing_key
   exit 0
 fi
 
@@ -352,3 +363,5 @@ write_config "$provider" "$model" "$base_url"
 [ "$provider" = "custom" ] && add_custom_provider "${HERMES_PROVIDER_NAME:-$base_url}" "$base_url" "$model"
 
 echo "hermes: provider=$provider model=$model (from $source_note) base_url=$base_url context_length=$HERMES_CONTEXT_LENGTH" >&2
+
+warn_missing_key
