@@ -112,6 +112,7 @@ exec docker run --rm --init ${RUN_MODE[@]+"${RUN_MODE[@]}"} ${TTY[@]+"${TTY[@]}"
   -e GEMINI_API_KEY \
   -e MINIMAX_API_KEY \
   -e HERMES_PORT="$PORT" \
+  -e HOST_WORKSPACE="$PWD" \
   -v "$PWD:/workspace" \
   -v "$HARNESS_DIR:/hermes" \
   -v "$DHC_DIR:/opt/hermes" \

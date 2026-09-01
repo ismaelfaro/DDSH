@@ -36,6 +36,14 @@ if [ "${1:-}" = "setup-model" ]; then
   exec /usr/local/bin/configure-model.sh --interactive
 fi
 
+# The container can only see the folder hermes.sh was launched from, mounted
+# at /workspace, so pin the agent's terminal there on every start: `terminal.cwd`
+# defaults to "." (the process cwd, which is already /workspace) but an explicit
+# path is what the UI shows, and it cannot drift to a directory that does not
+# exist in here.
+hermes config set terminal.cwd /workspace >/dev/null 2>&1 || true
+echo "hermes: workspace ${HOST_WORKSPACE:-(host folder)} -> /workspace" >&2
+
 # Otherwise resolve provider + model from the environment and persist them to
 # $HERMES_HOME/config.yaml (see configure-model.sh for the rules).
 /usr/local/bin/configure-model.sh || true
