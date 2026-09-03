@@ -36,6 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Config volume: HERMES_HOME — profile, skills, memories, sessions, settings.
 ENV HERMES_HOME=/hermes
+# The dashboard's Files tab defaults to the container's home directory, which
+# is not mounted anywhere: folders created there would live and die with the
+# container. Point it at the workspace, the folder the runner mounted.
+ENV HERMES_DASHBOARD_FILES_ROOT=/workspace
 # The venv lives in /opt/hermes, a persistent mount seeded from the image, so
 # packages Hermes installs for itself survive container removal.
 # $HERMES_HOME/node/bin: whatever Hermes installed for itself stays usable.

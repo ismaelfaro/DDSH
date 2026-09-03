@@ -45,6 +45,8 @@ Provider keys are passed straight through from your environment (`NOUS_API_KEY`,
 
 ## Notes
 
+- **The Files tab shows `/workspace`.** By default it browses the container's home directory, which is mounted nowhere — folders created there would vanish with the container. `HERMES_DASHBOARD_FILES_ROOT` pins it to the folder you launched from.
+
 - The dashboard stores API keys and ships no authentication, so it binds container loopback only. A `socat` bridge on `19119` carries the published port, which the host maps to `127.0.0.1`. Do not republish it on `0.0.0.0`.
 - The venv is built at `/opt/hermes` in the image, copied to a seed directory, and restored into the persistent `.DHC/` mount on first start — console-script shebangs bake in the venv path, so it must be built where it finally runs.
 - Installed from PyPI (`hermes-agent`), which can trail the GitHub `main` branch by a release.

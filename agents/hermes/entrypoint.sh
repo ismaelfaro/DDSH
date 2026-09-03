@@ -42,7 +42,7 @@ fi
 # path is what the UI shows, and it cannot drift to a directory that does not
 # exist in here.
 hermes config set terminal.cwd /workspace >/dev/null 2>&1 || true
-echo "hermes: workspace ${HOST_WORKSPACE:-(host folder)} -> /workspace" >&2
+echo "hermes: workspace ${HOST_WORKSPACE:-(host folder)} -> /workspace (and \$HOME)" >&2
 
 # Otherwise resolve provider + model from the environment and persist them to
 # $HERMES_HOME/config.yaml (see configure-model.sh for the rules).

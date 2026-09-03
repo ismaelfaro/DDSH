@@ -15,7 +15,8 @@
 #
 # Run the Hermes Agent dashboard against the CURRENT directory.
 #   ./hermes.sh            # serve http://localhost:9119 over $PWD
-#   HERMES_PORT=9200 ./hermes.sh
+#                          # (if 9119 is busy, the next free port is used)
+#   HERMES_PORT=9200 ./hermes.sh      # exact port; errors out if it is busy
 #   ./hermes.sh chat       # any other hermes command
 #   HERMES_SETUP=always ./hermes.sh   # re-run the provider/model picker
 #   HERMES_DETACH=1 ./hermes.sh       # run in the background
@@ -23,6 +24,8 @@ set -euo pipefail
 
 IMAGE="${HERMES_IMAGE:-hermes-web:local}"
 PORT="${HERMES_PORT:-9119}"
+# An explicit HERMES_PORT is honoured as-is; only the default is auto-bumped.
+PORT_EXPLICIT="${HERMES_PORT+1}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Persistent host folders, both owned by the container's `hermes` user (1000).
@@ -81,6 +84,39 @@ if [ -t 0 ] && [ "${HERMES_SETUP:-auto}" != "never" ] \
     "$IMAGE" setup-model || echo "hermes: setup skipped; falling back to the environment" >&2
 fi
 
+# The container name is derived from $PWD, so the same port can still be held
+# by a hermes started from a different directory, or by an unrelated process.
+# Find who has it, so we can bump past it instead of surfacing a raw daemon
+# "Bind for 127.0.0.1:$PORT failed" much further down.
+port_holder() {
+  docker ps --filter "publish=$1" --format '{{.Names}}' 2>/dev/null | head -n 1
+}
+port_busy() {
+  [ -n "$(port_holder "$1")" ] && return 0
+  (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && exec 3>&- && return 0
+  return 1
+}
+
+if port_busy "$PORT"; then
+  HOLDER="$(port_holder "$PORT")"
+  if [ -n "$PORT_EXPLICIT" ]; then
+    echo "error: port 127.0.0.1:$PORT is already in use${HOLDER:+ by container $HOLDER}." >&2
+    [ -n "$HOLDER" ] && echo "  stop it:        docker rm -f $HOLDER" >&2
+    echo "  or use another: HERMES_PORT=$((PORT + 1)) $0" >&2
+    exit 1
+  fi
+  BUSY="$PORT"
+  for _ in 1 2 3 4 5 6 7 8 9; do
+    PORT=$((PORT + 1))
+    port_busy "$PORT" || break
+  done
+  if port_busy "$PORT"; then
+    echo "error: ports $BUSY-$PORT are all in use; pass HERMES_PORT=<free port>." >&2
+    exit 1
+  fi
+  echo "hermes: port $BUSY busy${HOLDER:+ (container $HOLDER)}; using $PORT instead" >&2
+fi
+
 NAME="hermes-$(basename "$PWD")-$PORT"
 
 # A previous crashed run can leave its name behind; reuse is fine if stopped.
@@ -92,6 +128,12 @@ if ! docker rm "$NAME" >/dev/null 2>&1 && docker container inspect "$NAME" >/dev
   exit 1
 fi
 
+# $PWD is mounted twice on purpose. /workspace is the path the UI shows and
+# terminal.cwd points at; /home/hermes is the container user's HOME, so a file
+# the agent writes to `~` (or to a bare relative path from a tool that starts in
+# HOME) lands in the launch folder too, not in a container-only directory that
+# disappears with `--rm`. Side effect: the agent's dotfiles (.bash_history,
+# .cache, ...) are now created in that folder as well.
 exec docker run --rm --init ${RUN_MODE[@]+"${RUN_MODE[@]}"} ${TTY[@]+"${TTY[@]}"} \
   --name "$NAME" \
   -p "127.0.0.1:${PORT}:19119" \
@@ -114,6 +156,7 @@ exec docker run --rm --init ${RUN_MODE[@]+"${RUN_MODE[@]}"} ${TTY[@]+"${TTY[@]}"
   -e HERMES_PORT="$PORT" \
   -e HOST_WORKSPACE="$PWD" \
   -v "$PWD:/workspace" \
+  -v "$PWD:/home/hermes" \
   -v "$HARNESS_DIR:/hermes" \
   -v "$DHC_DIR:/opt/hermes" \
   -w /workspace \
