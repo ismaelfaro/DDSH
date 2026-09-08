@@ -1,118 +1,50 @@
-# DDSH: dsh in Docker
+# DeepHarness
 
-Runs [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`@deepseek-ai/dsh`) in a container, pointed at any folder on your machine.
+Autonomous coding agents, each in a container, each pointed at whatever folder you launch it from.
+
+Every harness here follows the same shape, so switching between them is a different script name and nothing else:
+
+| | dsh | Hermes | OpenClaw | OpenHands |
+|---|---|---|---|---|
+| Upstream | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | [openclaw/openclaw](https://github.com/openclaw/openclaw) | [OpenHands/OpenHands](https://github.com/OpenHands/OpenHands) |
+| Runtime | Node 22 (pnpm) | Python 3.12 (uv) + Node 22 | Node 22 (npm) | official image |
+| Launch | [`agents/dsh/dsh.sh`](agents/dsh/dsh.sh) | [`agents/hermes/hermes.sh`](agents/hermes/hermes.sh) | [`agents/openclaw/openclaw.sh`](agents/openclaw/openclaw.sh) | [`agents/openhands/openhands.sh`](agents/openhands/openhands.sh) |
+| Web UI | http://localhost:3080 | http://localhost:9119 | http://localhost:18789 (token in URL) | http://localhost:8000/canvas |
+| Model setup | env / `settings.yaml` | env, or the picker on first run | onboarded from env on first start | in the UI |
+| Docs | [dsh](agents/dsh/README.md) | [hermes](agents/hermes/README.md) | [openclaw](agents/openclaw/README.md) | [openhands](agents/openhands/README.md) |
+
+## The shared contract
 
 ```
-host                                    container
-─────────────────────────────────────   ─────────────────────────────────
-<folder you launch from>/  ──────────►  /workspace      (agent's work root)
-<repo>/.harness/           ──────────►  /dsh            ($DSH_HOME config)
-<repo>/.DHC/               ──────────►  /opt/dsh        (dependency tree)
-127.0.0.1:$DSH_PORT        ◄──────────  13080 (socat) → 3080 (dsh, loopback)
+host                                      container
+───────────────────────────────────────   ──────────────────────────────────
+<folder you launch from>/    ──────────►  /workspace   the agent's work root,
+                                                       and all it can see
+agents/<name>/.harness/      ──────────►  the harness config home
+agents/<name>/.DHC/          ──────────►  the harness dependency tree
+127.0.0.1:<port>             ◄──────────  socat bridge → loopback web UI
 ```
 
-Licensed under the [Apache License 2.0](LICENSE). The upstream harness it packages is MIT-licensed ([third-party notices](https://github.com/deepseek-ai/deepseek-harness/blob/master/THIRD_PARTY_NOTICES.md)).
-
-## Requirements
-
-- Docker (Docker Desktop on macOS/Windows, or a Linux engine)
-- Bash (for `dsh.sh`)
-- An API key — DeepSeek or OpenRouter
+- **The work folder is where you run the script**, not where the script lives. The container sees that folder and nothing else of your machine, and files it writes land there owned by you.
+- **State outlives containers.** `.harness/` (settings, credentials, sessions, skills) and, where the harness installs things for itself, `.DHC/` (its dependency tree) are bind mounts next to each agent, so `docker rm` costs nothing and a rebuild does not re-download the world. Both are gitignored.
+- **Loopback only.** These agents execute shell commands with little or no authentication in front of them. Every web UI is published to the host's `127.0.0.1` and nothing else. Three of them refuse to bind anything but container loopback, so a `socat` bridge carries the published port; OpenHands binds `0.0.0.0` inside its own container and needs no hop. Do not republish any of them on `0.0.0.0`.
+- **Keys stay in the environment.** Provider API keys are passed through from your shell and never written into an image or a config file.
 
 ## Quick start
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
+export OPENROUTER_API_KEY=sk-or-...        # or the provider you use
 
-cd /path/to/project          # the folder the agent will work in
-/path/to/ddsh/dsh.sh         # first run builds the image (~1 min)
+cd /path/to/your/project                   # the folder the agent works in
+/path/to/DeepHarness/agents/hermes/hermes.sh    # or dsh, openclaw, openhands
 ```
 
-Open http://localhost:3080. The agent sees only the folder you launched from.
+First run builds the image (1-3 minutes); later runs start in seconds. Each agent's README covers its own flags, providers, and quirks.
 
-### OpenRouter instead
+## Adding another harness
 
-```bash
-export OPENROUTER_API_KEY=sk-or-...
-# optional:
-export OPENROUTER_MODELS=deepseek/deepseek-chat-v3.1,anthropic/claude-sonnet-4.5
-# export OPENROUTER_BASE_URL=https://openrouter.ai/api/v1   (default shown)
-```
+Copy the closest `agents/<name>/` directory and keep the four pieces: a `Dockerfile` that pins the harness at build time (installing it, or wrapping an official image as OpenHands does), an `entrypoint.sh` that keeps the UI off the network, a `<name>.sh` runner that mounts `$PWD` plus the state directories, and a `README.md`. Nothing else in the repository needs to know about it.
 
-With `OPENROUTER_API_KEY` set, the entrypoint registers an `openrouter` provider in `$DSH_HOME/settings.yaml` (`api: openai-completions`). Models appear under **Settings → Models** in the web UI. Only the env-var *name* is written to config; the key itself stays in the environment and never lands in a file. If you already maintain an `llm-pi-ai` section in that file, add the provider by hand instead.
+## License
 
-### Compose
-
-Working on this repository itself:
-
-```bash
-docker compose up
-```
-
-## Volumes
-
-| Host path | Container | Purpose |
-|---|---|---|
-| *launch directory* | `/workspace` | Work volume — everything the agent can read/write |
-| `<repo>/.harness/` | `/dsh` (`$DSH_HOME`) | Profiles, plugins, `settings.yaml`, credentials |
-| `<repo>/.DHC/` | `/opt/dsh` | Full harness dependency tree |
-
-Both `.harness/` and `.DHC/` are created automatically next to `dsh.sh` and survive container removal:
-
-- `.harness/` keeps your settings, plugins, and stored credentials across upgrades.
-- `.DHC/` is seeded from the image on **first start only**; after that, plugins installed with `dsh plugin add` persist and nothing is reinstalled per boot.
-
-Both folders must be writable by the container's `node` user (uid 1000). On macOS Docker Desktop this just works; on Linux `dsh.sh` attempts a passwordless `chown`, otherwise:
-
-```bash
-sudo chown -R 1000:1000 .harness .DHC
-```
-
-Add both folders to `.gitignore` — they are machine-local state (and `.harness/` can hold credential material).
-
-## Configuration
-
-Copy `.env.example` to `.env` for `docker compose`, or export the variables directly for `dsh.sh`.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | — | DeepSeek API key |
-| `OPENROUTER_API_KEY` | — | Enables the OpenRouter provider when set |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint override |
-| `OPENROUTER_MODELS` | `deepseek/deepseek-chat-v3.1` | Comma-separated model ids to expose |
-| `DSH_PORT` | `3080` | Host port of the web UI |
-| `DSH_VERSION` | `latest` | Pin the harness version, e.g. `0.1.0-rc.8` |
-| `DSH_TRUSTED_HOSTS` | loopback already trusted | Extra Host authorities accepted by the `/api` trust fence, space separated |
-
-API keys are read from your environment at runtime; nothing secret is baked into the image or written to `settings.yaml`.
-
-## CLI passthrough
-
-Any dsh command runs inside the same container setup:
-
-```bash
-./dsh.sh plugin --profile web add <package>
-./dsh.sh --version
-```
-
-The image rebuilds automatically whenever `Dockerfile` or `entrypoint.sh` changes (fingerprint label), so an outdated image can't shadow fixes. Force it manually with `docker build -t dsh-web:local .`
-
-## Security model
-
-- The harness runs shell commands — it is effectively local RCE by design. That is why:
-  - `dsh` binds loopback only (`--host 0.0.0.0` is rejected upstream on purpose);
-  - the published port is bound to the host's `127.0.0.1`, not `0.0.0.0`;
-  - a `socat` bridge inside the container carries the published port (`13080`) to dsh on loopback (`3080`).
-- The container sees exactly two host paths: your launch directory (via `/workspace`) and the two state folders above.
-- `/workspace` is the ONLY host path the agent can work with. Files it creates land in your folder with your ownership.
-- Python 3.11 + Qiskit (with Aer simulator), NumPy, and Matplotlib are baked into the image at `/opt/pyvenv` and on the container `PATH` — the agent can run quantum/data scripts directly. See `examples/bell_state.py`. Python packages ship with image rebuilds; they are not part of the persistent `.DHC` tree.
-- API keys are read from your environment at runtime; nothing secret is baked into the image.
-- Never expose port 3080 beyond loopback without understanding the above.
-
-## Troubleshooting
-
-- **`container ... is already running (port busy)`** — a previous crashed run left a live container (its `socat` bridge can keep it alive even after `exec` fails). Stop it: `docker rm -f dsh-$(basename $PWD)-$DSH_PORT`.
-- **Container fails writing to `.harness/` or `.DHC/`** (Linux) — fix ownership: `sudo chown -R 1000:1000 .harness .DHC`.
-- **Provider errors like `MISSING_CREDENTIAL`** — the env var named in `apiKeyEnv` isn't set in the environment that launched the container. Re-export the key and relaunch via `dsh.sh`.
-- **Stale behavior after editing scripts** — should rebuild automatically; force with `docker build --no-cache -t dsh-web:local .`
-- **Migrating from the old named-volume setup** — copy the old volume contents into `.harness/`: `docker run --rm -v dsh-config:/from -v "$PWD/.harness":/to alpine cp -a /from/. /to/`
+[Apache License 2.0](LICENSE). Each packaged harness keeps its own upstream license (both are MIT today).
