@@ -20,9 +20,37 @@
 #   OPENHANDS_DETACH=1 ./openhands.sh       # run in the background
 set -euo pipefail
 
+# --- DeepHarness portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
+command -v docker >/dev/null 2>&1 || {
+  echo "error: docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)," >&2
+  echo "  then re-run: $0" >&2
+  exit 1
+}
+docker info >/dev/null 2>&1 || {
+  echo "error: docker daemon not responding. Start Docker Desktop (or 'sudo systemctl start docker' on Linux)," >&2
+  echo "  then re-run: $0" >&2
+  exit 1
+}
+
+# sha256 of stdin, using whatever the host has (macOS: shasum, Linux: sha256sum).
+sha256_stdin() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1
+  elif command -v openssl >/dev/null 2>&1; then openssl dgst -sha256 -r | cut -d' ' -f1
+  else python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+  fi
+}
+
 IMAGE="${OPENHANDS_IMAGE:-openhands-web:local}"
 PORT="${OPENHANDS_PORT:-8000}"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve HERE even when invoked via a symlink (no readlink -f on macOS).
+_SOURCE="${BASH_SOURCE[0]:-$0}"
+while [ -L "$_SOURCE" ]; do
+  _DIR="$(cd "$(dirname "$_SOURCE")" && pwd)"
+  _SOURCE="$(readlink "$_SOURCE")"
+  case "$_SOURCE" in /*) ;; *) _SOURCE="$_DIR/$_SOURCE" ;; esac
+done
+HERE="$(cd "$(dirname "$_SOURCE")" && pwd)"
 
 # Persistent host folders, both owned by the container's `openhands` user.
 #   .harness — /home/openhands/.openhands: settings, conversations, secrets
@@ -42,7 +70,7 @@ fi
 
 # Rebuild when the image is missing OR Dockerfile/entrypoint.sh changed since
 # the last build (fingerprint label), so an outdated image can't shadow fixes.
-FPRINT="$(cat "$HERE/Dockerfile" "$HERE/entrypoint.sh" | shasum -a 256 | cut -d' ' -f1)"
+FPRINT="$(cat "$HERE/Dockerfile" "$HERE/entrypoint.sh" | sha256_stdin)"
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1 \
    || [ "$(docker image inspect -f '{{ index .Config.Labels "openhands-fingerprint" }}' "$IMAGE" 2>/dev/null || true)" != "$FPRINT" ]; then
   echo "building $IMAGE ..." >&2
@@ -51,7 +79,7 @@ fi
 
 # Interactive only when there is a terminal to attach to.
 TTY=()
-[ -t 0 ] && TTY=(-it)
+if [ -t 0 ]; then TTY=(-it); fi
 
 # OPENHANDS_DETACH=1 leaves the dashboard running in the background instead of
 # holding the terminal (stop it with `docker rm -f <name>`).
@@ -61,7 +89,10 @@ if [ -n "${OPENHANDS_DETACH:-}" ]; then
   TTY=()
 fi
 
-NAME="openhands-$(basename "$PWD")-$PORT"
+# Docker container names allow [a-zA-Z0-9_.-]; slugify $PWD's basename.
+_SLUG="$(basename "$PWD" | tr -c 'a-zA-Z0-9_.-' '-' | cut -c1-64)"
+[ -n "$_SLUG" ] || _SLUG="workspace"
+NAME="openhands-$_SLUG-$PORT"
 
 # A previous crashed run can leave its name behind; reuse is fine if stopped.
 # If one is still RUNNING (e.g. a crashed entrypoint left socat alive), say
