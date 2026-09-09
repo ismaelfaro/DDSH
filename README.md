@@ -30,14 +30,37 @@ agents/<name>/.DHC/          ──────────►  the harness depe
 - **Loopback only.** These agents execute shell commands with little or no authentication in front of them. Every web UI is published to the host's `127.0.0.1` and nothing else. Three of them refuse to bind anything but container loopback, so a `socat` bridge carries the published port; OpenHands binds `0.0.0.0` inside its own container and needs no hop. Do not republish any of them on `0.0.0.0`.
 - **Keys stay in the environment.** Provider API keys are passed through from your shell and never written into an image or a config file.
 
+## Install (macOS first)
+
+```bash
+# from this checkout
+./install.sh
+# or straight from the internet
+curl -fsSL https://raw.githubusercontent.com/ismaelfaro/DDSH/main/install.sh | bash
+```
+
+This copies the repo to `~/.deepharness` (no sessions, keys, or dependency
+trees — those stay where they were) and links `dsh`, `hermes`, `openclaw`,
+`openhands` into `~/.local/bin`, adding it to PATH via `~/.zshrc`.
+Re-running it updates the copy. It warns — but does not stop — when Docker
+is missing; the runners re-check Docker on every start.
+
 ## Quick start
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...        # or the provider you use
 
-cd /path/to/your/project                   # the folder the agent works in
-/path/to/DeepHarness/agents/hermes/hermes.sh    # or dsh, openclaw, openhands
+cd /path/to/your/project-a                 # the folder the agent works in
+hermes                                     # installed shim; or ./agents/hermes/hermes.sh
+
+cd /path/to/your/project-b                 # a second folder = a second instance
+hermes                                     # hermes auto-bumps a busy default port
 ```
+
+Each folder you launch from becomes an isolated instance (own container,
+own workspace mount). `hermes` moves to the next free port when the default
+is busy; the others take an explicit one: `DSH_PORT=3090 dsh`,
+`OPENCLAW_PORT=9200 openclaw`, `OPENHANDS_PORT=9200 openhands`.
 
 First run builds the image (1-3 minutes); later runs start in seconds. Each agent's README covers its own flags, providers, and quirks.
 
