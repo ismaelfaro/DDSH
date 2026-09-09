@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 #   ./dsh.sh plugin --profile web add <pkg>   # any other dsh command
 set -euo pipefail
 
-# --- DeepHarness portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
+# --- AgentDorm portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
 command -v docker >/dev/null 2>&1 || {
   echo "error: docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)," >&2
   echo "  then re-run: $0" >&2
@@ -53,15 +53,17 @@ HERE="$(cd "$(dirname "$_SOURCE")" && pwd)"
 
 # Persistent host folders, both owned by the container's `node` user (1000).
 #   .harness — $DSH_HOME: profiles, plugins, settings, credentials
-#   .DHC     — /opt/dsh: the harness dependency tree, seeded on first start
+#   .deps    — /opt/dsh: the harness dependency tree, seeded on first start
 HARNESS_DIR="$HERE/.harness"
-DHC_DIR="$HERE/.DHC"
-mkdir -p "$HARNESS_DIR" "$DHC_DIR"
+DEPS_DIR="$HERE/.deps"
+# .DHC was this directory's name before the project was renamed.
+[ -d "$HERE/.DHC" ] && [ ! -d "$DEPS_DIR" ] && mv "$HERE/.DHC" "$DEPS_DIR"
+mkdir -p "$HARNESS_DIR" "$DEPS_DIR"
 
 # Bind-mount permissions only matter on Linux; Docker Desktop maps any host
 # uid into the VM, so the check is noise there.
 if [ "$(uname)" != "Darwin" ] && [ "$(id -u)" != "0" ]; then
-  for d in "$HARNESS_DIR" "$DHC_DIR"; do
+  for d in "$HARNESS_DIR" "$DEPS_DIR"; do
     if [ "$(stat -c %u "$d")" != "1000" ]; then
       sudo -n chown -R 1000:1000 "$d" 2>/dev/null \
         || echo "warning: $d not writable by uid 1000; run 'sudo chown -R 1000:1000 \"$d\"' if the container fails to start" >&2
@@ -107,6 +109,6 @@ exec docker run --rm --init ${TTY[@]+"${TTY[@]}"} \
   -e DSH_PORT="$PORT" \
   -v "$PWD:/workspace" \
   -v "$HARNESS_DIR:/dsh" \
-  -v "$DHC_DIR:/opt/dsh" \
+  -v "$DEPS_DIR:/opt/dsh" \
   -w /workspace \
   "$IMAGE" "${@:-web}"

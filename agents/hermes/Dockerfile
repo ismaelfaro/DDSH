@@ -1,7 +1,7 @@
 # Hermes Agent dashboard in a container.
 # https://github.com/NousResearch/hermes-agent
 #
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

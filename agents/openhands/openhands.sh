@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 #   OPENHANDS_DETACH=1 ./openhands.sh       # run in the background
 set -euo pipefail
 
-# --- DeepHarness portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
+# --- AgentDorm portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
 command -v docker >/dev/null 2>&1 || {
   echo "error: docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)," >&2
   echo "  then re-run: $0" >&2

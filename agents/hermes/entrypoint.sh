@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ HERMES_INTERNAL_PORT="${HERMES_INTERNAL_PORT:-9119}"
 # Port socat listens on for the published-port NAT.
 HERMES_BRIDGE_PORT="${HERMES_BRIDGE_PORT:-19119}"
 
-# /opt/hermes may be a host bind mount (.DHC). On first start it is empty, so
+# /opt/hermes may be a host bind mount (.deps). On first start it is empty, so
 # copy the image's seed venv into it once; afterwards anything Hermes installs
 # for itself persists across containers.
 if [ ! -x /opt/hermes/bin/hermes ]; then

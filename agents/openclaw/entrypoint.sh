@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ OPENCLAW_INTERNAL_PORT="${OPENCLAW_INTERNAL_PORT:-18789}"
 # Port socat listens on for the published-port NAT.
 OPENCLAW_BRIDGE_PORT="${OPENCLAW_BRIDGE_PORT:-18790}"
 
-# /opt/openclaw may be a host bind mount (.DHC). On first start it is empty, so
+# /opt/openclaw may be a host bind mount (.deps). On first start it is empty, so
 # copy the image's seed install into it once; afterwards plugins and updates
 # OpenClaw installs for itself persist across containers.
 if [ ! -x /opt/openclaw/bin/openclaw ]; then
@@ -89,9 +89,9 @@ consent_to_plugins() {
 if [ "${1:-}" = "gateway" ]; then
   shift
 
-  if [ ! -f "$OPENCLAW_STATE_DIR/.deepharness-plugins-accepted" ]; then
+  if [ ! -f "$OPENCLAW_STATE_DIR/.agentdorm-plugins-accepted" ]; then
     consent_to_plugins
-    touch "$OPENCLAW_STATE_DIR/.deepharness-plugins-accepted"
+    touch "$OPENCLAW_STATE_DIR/.agentdorm-plugins-accepted"
   fi
   # The Gateway is the control plane for an agent with shell access, so it
   # stays on container loopback; socat bridges the published port, which the

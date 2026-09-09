@@ -1,6 +1,6 @@
 # OpenHands in Docker
 
-Runs [OpenHands Agent Canvas](https://github.com/OpenHands/OpenHands) in a container, pointed at any folder on your machine. Part of [DeepHarness](../../README.md).
+Runs [OpenHands Agent Canvas](https://github.com/OpenHands/OpenHands) in a container, pointed at any folder on your machine. Part of [AgentDorm](../../README.md).
 
 ```
 host                                    container
@@ -16,7 +16,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). OpenHands is MIT-license
 
 ```bash
 cd /path/to/your/project
-/path/to/DeepHarness/agents/openhands/openhands.sh
+/path/to/agentdorm/agents/openhands/openhands.sh
 ```
 
 Open http://localhost:8000/canvas — plain `/` redirects there.

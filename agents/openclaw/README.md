@@ -1,13 +1,13 @@
 # OpenClaw in Docker
 
-Runs [OpenClaw](https://github.com/openclaw/openclaw)'s Gateway and Control UI in a container, pointed at any folder on your machine. Part of [DeepHarness](../../README.md); same layout as the other agents next to it.
+Runs [OpenClaw](https://github.com/openclaw/openclaw)'s Gateway and Control UI in a container, pointed at any folder on your machine. Part of [AgentDorm](../../README.md); same layout as the other agents next to it.
 
 ```
 host                                    container
 ─────────────────────────────────────   ─────────────────────────────────
 <folder you launch from>/  ──────────►  /workspace     (agent's work root)
 agents/openclaw/.harness/  ──────────►  /openclaw      ($OPENCLAW_STATE_DIR)
-agents/openclaw/.DHC/      ──────────►  /opt/openclaw  (npm install tree)
+agents/openclaw/.deps/      ──────────►  /opt/openclaw  (npm install tree)
 127.0.0.1:$OPENCLAW_PORT   ◄──────────  18790 (socat) → 18789 (gateway, loopback)
 ```
 
@@ -19,7 +19,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). OpenClaw itself is MIT-l
 export OPENROUTER_API_KEY=sk-or-...
 
 cd /path/to/your/project
-/path/to/DeepHarness/agents/openclaw/openclaw.sh
+/path/to/agentdorm/agents/openclaw/openclaw.sh
 ```
 
 The first start onboards without prompts using whichever provider key it finds — `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, or `GEMINI_API_KEY` — and then prints the Control UI link:

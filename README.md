@@ -1,4 +1,4 @@
-# DeepHarness
+# AgentDorm
 
 Autonomous coding agents, each in a container, each pointed at whatever folder you launch it from.
 
@@ -21,12 +21,12 @@ host                                      container
 <folder you launch from>/    ──────────►  /workspace   the agent's work root,
                                                        and all it can see
 agents/<name>/.harness/      ──────────►  the harness config home
-agents/<name>/.DHC/          ──────────►  the harness dependency tree
+agents/<name>/.deps/          ──────────►  the harness dependency tree
 127.0.0.1:<port>             ◄──────────  socat bridge → loopback web UI
 ```
 
 - **The work folder is where you run the script**, not where the script lives. The container sees that folder and nothing else of your machine, and files it writes land there owned by you.
-- **State outlives containers.** `.harness/` (settings, credentials, sessions, skills) and, where the harness installs things for itself, `.DHC/` (its dependency tree) are bind mounts next to each agent, so `docker rm` costs nothing and a rebuild does not re-download the world. Both are gitignored.
+- **State outlives containers.** `.harness/` (settings, credentials, sessions, skills) and, where the harness installs things for itself, `.deps/` (its dependency tree) are bind mounts next to each agent, so `docker rm` costs nothing and a rebuild does not re-download the world. Both are gitignored.
 - **Loopback only.** These agents execute shell commands with little or no authentication in front of them. Every web UI is published to the host's `127.0.0.1` and nothing else. Three of them refuse to bind anything but container loopback, so a `socat` bridge carries the published port; OpenHands binds `0.0.0.0` inside its own container and needs no hop. Do not republish any of them on `0.0.0.0`.
 - **Keys stay in the environment.** Provider API keys are passed through from your shell and never written into an image or a config file.
 
@@ -36,10 +36,10 @@ agents/<name>/.DHC/          ──────────►  the harness depe
 # from this checkout
 ./install.sh
 # or straight from the internet
-curl -fsSL https://raw.githubusercontent.com/ismaelfaro/DDSH/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ismaelfaro/agentdorm/main/install.sh | bash
 ```
 
-This copies the repo to `~/.deepharness` (no sessions, keys, or dependency
+This copies the repo to `~/.agentdorm` (no sessions, keys, or dependency
 trees — those stay where they were) and links `dsh`, `hermes`, `openclaw`,
 `openhands` into `~/.local/bin`, adding it to PATH via `~/.zshrc`.
 Re-running it updates the copy. It warns — but does not stop — when Docker

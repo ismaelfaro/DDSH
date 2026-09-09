@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Install DeepHarness so the agents run from ANY folder:
+# Install AgentDorm so the agents run from ANY folder:
 #
 #   From a checkout:   ./install.sh
-#   From the internet: curl -fsSL https://raw.githubusercontent.com/ismaelfaro/DDSH/main/install.sh | bash
+#   From the internet: curl -fsSL https://raw.githubusercontent.com/ismaelfaro/agentdorm/main/install.sh | bash
 #
 # What it does:
-#   1. Puts the repo at ~/.deepharness (clone, or reuses the checkout you run it from).
+#   1. Puts the repo at ~/.agentdorm (clone, or reuses the checkout you run it from).
 #   2. Symlinks `dsh`, `hermes`, `openclaw`, `openhands` into ~/.local/bin.
 #   3. Adds ~/.local/bin to PATH (via ~/.zshrc on macOS, ~/.bashrc elsewhere).
 #
@@ -28,9 +28,9 @@
 #   cd /path/to/project-b && hermes     # next free port, own container
 #
 # Options (or env vars):
-#   --dir DIR        repo location            [DEEPHARNESS_DIR, default ~/.deepharness]
-#   --bin-dir DIR    where the shims go       [DEEPHARNESS_BIN_DIR, default ~/.local/bin]
-#   --repo URL       git remote to clone from [default https://github.com/ismaelfaro/DDSH.git]
+#   --dir DIR        repo location            [AGENTDORM_DIR, default ~/.agentdorm]
+#   --bin-dir DIR    where the shims go       [AGENTDORM_BIN_DIR, default ~/.local/bin]
+#   --repo URL       git remote to clone from [default https://github.com/ismaelfaro/agentdorm.git]
 #   --no-path        skip the PATH tweak, just print what to add
 #   -h, --help       this text
 #
@@ -38,10 +38,12 @@
 # ~/.zshrc. Linux/BSD/Git-Bash follow the same layout with ~/.bashrc.
 set -euo pipefail
 
-REPO_URL="https://github.com/ismaelfaro/DDSH.git"
-DEST="${DEEPHARNESS_DIR:-$HOME/.deepharness}"
-BIN_DIR="${DEEPHARNESS_BIN_DIR:-$HOME/.local/bin}"
-NO_PATH="${DEEPHARNESS_NO_PATH:-}"
+REPO_URL="https://github.com/ismaelfaro/agentdorm.git"
+# The DEEPHARNESS_* names are what this project was called before; they are
+# honoured so an existing install keeps working after the rename.
+DEST="${AGENTDORM_DIR:-${DEEPHARNESS_DIR:-$HOME/.agentdorm}}"
+BIN_DIR="${AGENTDORM_BIN_DIR:-${DEEPHARNESS_BIN_DIR:-$HOME/.local/bin}}"
+NO_PATH="${AGENTDORM_NO_PATH:-${DEEPHARNESS_NO_PATH:-}}"
 
 usage() { sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//'; }
 
@@ -56,8 +58,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-log()  { echo "deepharness: $*" >&2; }
-warn() { echo "deepharness: WARNING - $*" >&2; }
+# An install from before the rename lives in the old directory; say so rather
+# than silently building a second copy next to it.
+if [ -d "$HOME/.deepharness" ] && [ "$DEST" = "$HOME/.agentdorm" ] && [ ! -d "$DEST" ]; then
+  echo "agentdorm: found a previous install at ~/.deepharness (this project was renamed)." >&2
+  echo "agentdorm: keep its agent state with:  mv ~/.deepharness ~/.agentdorm" >&2
+  echo "agentdorm: continuing with a fresh install at $DEST" >&2
+fi
+
+log()  { echo "agentdorm: $*" >&2; }
+warn() { echo "agentdorm: WARNING - $*" >&2; }
 
 # --- 1. OS report (informational; layout below is the same everywhere) ---
 OS="$(uname -s)"
@@ -82,12 +92,12 @@ esac
 if [ -d "$SCRIPT_DIR/agents/dsh" ] && [ -f "$SCRIPT_DIR/agents/hermes/hermes.sh" ]; then
   log "using checkout at $SCRIPT_DIR"
   if [ "$SCRIPT_DIR" != "$DEST" ]; then
-    # Copy the checkout WITHOUT state: .harness/.DHC hold credentials,
+    # Copy the checkout WITHOUT state: .harness/.deps hold credentials,
     # sessions and GBs of dependencies; they get rebuilt per agent.
     command -v tar >/dev/null 2>&1 || { echo "error: tar not found" >&2; exit 1; }
     mkdir -p "$DEST"
-    log "syncing to $DEST (excluding .git, .harness, .DHC) ..."
-    tar -cf - --exclude=.git --exclude=.harness --exclude=.DHC -C "$SCRIPT_DIR" . \
+    log "syncing to $DEST (excluding .git, .harness, .deps) ..."
+    tar -cf - --exclude=.git --exclude=.harness --exclude=.deps --exclude=.DHC -C "$SCRIPT_DIR" . \
       | tar -xf - -C "$DEST"
   fi
   SRC="$DEST"
@@ -162,7 +172,7 @@ else
   elif [ -f "$HOME/.bashrc" ]; then RC="$HOME/.bashrc"
   else RC="$HOME/.profile"
   fi
-  LINE="export PATH=\"$BIN_DIR:\$PATH\"  # DeepHarness install.sh"
+  LINE="export PATH=\"$BIN_DIR:\$PATH\"  # AgentDorm install.sh"
   if [ -f "$RC" ] && grep -qF "$BIN_DIR" "$RC" 2>/dev/null; then
     log "$BIN_DIR already referenced in $RC"
   else

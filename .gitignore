@@ -1,28 +1,64 @@
-.env
+# ── Agent runtime state ───────────────────────────────────────────────────
+# Bind mounts created next to each agent. They hold credentials, sessions,
+# skills, and installed dependency trees: machine-local, often large, never
+# source. `.DHC` is what `.deps` was called before the project was renamed.
 **/.harness/
+**/.deps/
 **/.DHC/
 
-.vagrant*
-bin
-docker/docker
-.*.swp
-a.out
-*.orig
-build_src
-.flymake*
-.idea
+# Agent workspaces, when someone launches an agent from inside this repo.
+# Harnesses scaffold these into their work root on first run.
+**/workspace/
+AGENTS.md
+BOOTSTRAP.md
+IDENTITY.md
+SOUL.md
+USER.md
+
+# ── Secrets ───────────────────────────────────────────────────────────────
+# Provider API keys live in the environment, never in the tree. `.env.example`
+# is the checked-in template and stays tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/lib/**/*.key
+
+# ── Local overrides ───────────────────────────────────────────────────────
+docker-compose.override.yml
+dorm.local.yaml
+.direnv/
+
+# ── Editors and OS ────────────────────────────────────────────────────────
 .DS_Store
-docs/_build
-docs/_static
-docs/_templates
-.gopath/
-.dotcloud
-*.test
-bundles/
-.hg/
-.git/
-vendor/pkg/
-pyenv
-Vagrantfile
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
+# ── Build and language leftovers ──────────────────────────────────────────
+# Nothing here is built from source today, but agents run inside these folders
+# and their tooling leaves traces behind.
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
+# ── Logs and scratch ──────────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+scratch/

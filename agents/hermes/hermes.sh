@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
 #   HERMES_DETACH=1 ./hermes.sh       # run in the background
 set -euo pipefail
 
-# --- DeepHarness portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
+# --- AgentDorm portable preflight (macOS first, Linux/BSD/Git-Bash OK) ---
 command -v docker >/dev/null 2>&1 || {
   echo "error: docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)," >&2
   echo "  then re-run: $0" >&2
@@ -58,15 +58,17 @@ HERE="$(cd "$(dirname "$_SOURCE")" && pwd)"
 
 # Persistent host folders, both owned by the container's `hermes` user (1000).
 #   .harness — $HERMES_HOME: profile, skills, memories, sessions, settings
-#   .DHC     — /opt/hermes: the Hermes venv, seeded from the image on first start
+#   .deps    — /opt/hermes: the Hermes venv, seeded from the image on first start
 HARNESS_DIR="$HERE/.harness"
-DHC_DIR="$HERE/.DHC"
-mkdir -p "$HARNESS_DIR" "$DHC_DIR"
+DEPS_DIR="$HERE/.deps"
+# .DHC was this directory's name before the project was renamed.
+[ -d "$HERE/.DHC" ] && [ ! -d "$DEPS_DIR" ] && mv "$HERE/.DHC" "$DEPS_DIR"
+mkdir -p "$HARNESS_DIR" "$DEPS_DIR"
 
 # Bind-mount permissions only matter on Linux; Docker Desktop maps any host
 # uid into the VM, so the check is noise there.
 if [ "$(uname)" != "Darwin" ] && [ "$(id -u)" != "0" ]; then
-  for d in "$HARNESS_DIR" "$DHC_DIR"; do
+  for d in "$HARNESS_DIR" "$DEPS_DIR"; do
     if [ "$(stat -c %u "$d")" != "1000" ]; then
       sudo -n chown -R 1000:1000 "$d" 2>/dev/null \
         || echo "warning: $d not writable by uid 1000; run 'sudo chown -R 1000:1000 \"$d\"' if the container fails to start" >&2
@@ -107,7 +109,7 @@ if [ -t 0 ] && [ "${HERMES_SETUP:-auto}" != "never" ] \
     -e GEMINI_API_KEY -e MINIMAX_API_KEY \
     -e HERMES_BASE_URL -e HERMES_CONTEXT_LENGTH -e HERMES_FALLBACKS \
     -v "$HARNESS_DIR:/hermes" \
-    -v "$DHC_DIR:/opt/hermes" \
+    -v "$DEPS_DIR:/opt/hermes" \
     --entrypoint /usr/local/bin/entrypoint.sh \
     "$IMAGE" setup-model || echo "hermes: setup skipped; falling back to the environment" >&2
 fi
@@ -200,6 +202,6 @@ exec docker run --rm --init ${RUN_MODE[@]+"${RUN_MODE[@]}"} ${TTY[@]+"${TTY[@]}"
   -v "$PWD:/workspace" \
   -v "$PWD:/home/hermes" \
   -v "$HARNESS_DIR:/hermes" \
-  -v "$DHC_DIR:/opt/hermes" \
+  -v "$DEPS_DIR:/opt/hermes" \
   -w /workspace \
   "$IMAGE" "${@:-dashboard}"

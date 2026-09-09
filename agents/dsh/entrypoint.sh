@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copyright 2026 DeepHarness contributors
+# Copyright 2026 AgentDorm contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ DSH_INTERNAL_PORT="${DSH_INTERNAL_PORT:-3080}"
 # Port socat listens on for the published-port NAT.
 DSH_BRIDGE_PORT="${DSH_BRIDGE_PORT:-13080}"
 
-# /opt/dsh may be a host bind mount (.DHC). On first start it is empty, so
+# /opt/dsh may be a host bind mount (.deps). On first start it is empty, so
 # copy the image's seed install into it once; afterwards plugins installed
 # with `dsh plugin add` and any dependency updates persist across containers.
 if [ ! -e /opt/dsh/package.json ]; then
