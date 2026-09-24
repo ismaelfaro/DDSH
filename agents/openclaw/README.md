@@ -19,7 +19,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). OpenClaw itself is MIT-l
 export OPENROUTER_API_KEY=sk-or-...
 
 cd /path/to/your/project
-/path/to/agentdorm/agents/openclaw/openclaw.sh
+openclaw                  # = agentdorm run openclaw; the first run builds the image
 ```
 
 The first start onboards without prompts using whichever provider key it finds — `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, or `GEMINI_API_KEY` — and then prints the Control UI link:
@@ -37,20 +37,32 @@ docker exec openclaw-<folder>-18789 openclaw dashboard --no-open --json
 Any other OpenClaw command runs through the same script:
 
 ```bash
-./openclaw.sh doctor
-./openclaw.sh models list
-./openclaw.sh channels          # WhatsApp, Telegram, Slack, Discord, ...
+agentdorm run openclaw doctor
+agentdorm run openclaw models list
+agentdorm run openclaw channels          # WhatsApp, Telegram, Slack, Discord, ...
 ```
 
 ## Config
 
-`OPENCLAW_PORT` changes the host port. `--build-arg OPENCLAW_VERSION=2026.8.2` pins the version instead of tracking latest. `OPENCLAW_DETACH=1` runs it in the background.
+`OPENCLAW_PORT` changes the host port. `--build-arg OPENCLAW_VERSION=2026.8.2` pins the version instead of tracking latest. `agentdorm run openclaw --detach` (or `OPENCLAW_DETACH=1`) runs it in the background.
 
 Everything the Gateway stores — config, sessions, memory, pairings, credentials, installed plugins — lives in `.harness/`, so it survives `docker rm`.
+
+## As a resident
+
+A named, long-lived openclaw with its own memory, port and dorm inbox:
+
+```bash
+agentdorm new <name> --agent openclaw --description "the domain it should master"
+agentdorm up <name>
+agentdorm url <name>
+```
+
+Its state lives in `residents/<name>/.harness/` instead of `agents/openclaw/.harness/`. See the [root README](../../README.md#residents).
 
 ## Notes
 
 - **The first start is slow (up to two minutes).** The Gateway refuses to report ready while any plugin still needs capability consent, and onboarding installs provider plugins that ask for it — with no prompt to answer inside a container. The entrypoint therefore starts the Gateway once, reads which plugins it named, accepts those, and marks the state directory done. Later starts skip it.
 - **Loopback only.** The Gateway is the control plane for an agent with shell access and its token sits in a URL. It binds container loopback; socat carries the published port, mapped to the host's `127.0.0.1`. Do not republish on `0.0.0.0` — read OpenClaw's [exposure runbook](https://docs.openclaw.ai/gateway/security/exposure-runbook) first if you need remote access.
-- **Channels are not wired up.** OpenClaw's messaging integrations need per-channel setup and, for most, inbound network access. Pair them yourself with `./openclaw.sh channels` if you want them.
+- **Channels are not wired up.** OpenClaw's messaging integrations need per-channel setup and, for most, inbound network access. Pair them yourself with `agentdorm run openclaw channels` if you want them.
 - Keys are passed through from your environment and never written into the image.

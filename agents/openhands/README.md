@@ -16,7 +16,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). OpenHands is MIT-license
 
 ```bash
 cd /path/to/your/project
-/path/to/agentdorm/agents/openhands/openhands.sh
+openhands                  # = agentdorm run openhands; the first run builds the image
 ```
 
 Open http://localhost:8000/canvas — plain `/` redirects there.
@@ -25,7 +25,7 @@ Set the model in the UI (**Settings → LLM**); unlike the other agents here, Ag
 
 ## Config
 
-`OPENHANDS_PORT` changes the host port. `--build-arg OPENHANDS_VERSION=1.16.0` pins the release. `OPENHANDS_DETACH=1` runs it in the background.
+`OPENHANDS_PORT` changes the host port. `--build-arg OPENHANDS_VERSION=1.16.0` pins the release. `agentdorm run openhands --detach` (or `OPENHANDS_DETACH=1`) runs it in the background.
 
 ## How this one differs
 
@@ -34,3 +34,16 @@ Set the model in the UI (**Settings → LLM**); unlike the other agents here, Ag
 - **The work root is `/projects`, not `/workspace`**, because that is the path Agent Canvas browses. It is the same folder you launched from.
 - **One process tree, three services**: agent server (18000), automation (18001), and the static server on 8000 that fronts both. Only 8000 is published.
 - **Other agent backends are not wired up.** Agent Canvas can drive Claude Code, Codex, or remote backends over ACP; those need their own credentials and setup in the UI.
+
+## As a resident
+
+A named, long-lived openhands with its own memory, port and dorm inbox:
+
+```bash
+agentdorm new <name> --agent openhands --description "the domain it should master"
+agentdorm up <name>
+agentdorm url <name>
+```
+
+Its state lives in `residents/<name>/.harness/` instead of `agents/openhands/.harness/`. See the [root README](../../README.md#residents).
+

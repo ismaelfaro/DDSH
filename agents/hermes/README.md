@@ -16,7 +16,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). The upstream agent it pa
 ## Requirements
 
 - Docker
-- Bash (for `hermes.sh`)
+- Bash (macOS's built-in bash 3.2 is fine)
 - An API key for whichever provider you use (Nous Portal, OpenRouter, OpenAI, …)
 
 ## Quick start
@@ -25,7 +25,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). The upstream agent it pa
 export OPENROUTER_API_KEY=sk-or-...
 
 cd /path/to/project                 # the folder the agent will work in
-/path/to/agentdorm/agents/hermes/hermes.sh      # first run builds the image (~2 min)
+hermes                  # = agentdorm run hermes; the first run builds the image
 ```
 
 Open http://localhost:9119. The agent sees only the folder you launched from.
@@ -33,8 +33,8 @@ Open http://localhost:9119. The agent sees only the folder you launched from.
 Any other Hermes command runs through the same script:
 
 ```bash
-./hermes.sh model         # pick a provider/model
-./hermes.sh chat          # TUI instead of the dashboard
+agentdorm run hermes model         # pick a provider/model
+agentdorm run hermes chat          # TUI instead of the dashboard
 ```
 
 ## Config
@@ -42,6 +42,18 @@ Any other Hermes command runs through the same script:
 `HERMES_PORT` changes the host port. `--build-arg HERMES_VERSION=0.20.6` pins the agent version instead of tracking the latest PyPI release.
 
 Provider keys are passed straight through from your environment (`NOUS_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_MODELS`). They are never written into the image. Whatever you configure with `hermes model` lands in `.harness/`, so it survives container removal.
+
+## As a resident
+
+A named, long-lived hermes with its own memory, port and dorm inbox:
+
+```bash
+agentdorm new <name> --agent hermes --description "the domain it should master"
+agentdorm up <name>
+agentdorm url <name>
+```
+
+Its state lives in `residents/<name>/.harness/` instead of `agents/hermes/.harness/`. See the [root README](../../README.md#residents).
 
 ## Notes
 

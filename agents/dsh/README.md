@@ -18,7 +18,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). The upstream harness it 
 ## Requirements
 
 - Docker (Docker Desktop on macOS/Windows, or a Linux engine)
-- Bash (for `dsh.sh`)
+- Bash (macOS's built-in bash 3.2 is fine)
 - An API key — DeepSeek or OpenRouter
 
 ## Quick start
@@ -27,7 +27,7 @@ Licensed under the [Apache License 2.0](../../LICENSE). The upstream harness it 
 export DEEPSEEK_API_KEY=sk-...
 
 cd /path/to/project          # the folder the agent will work in
-/path/to/agentdorm/agents/dsh/dsh.sh         # first run builds the image (~1 min)
+dsh                  # = agentdorm run dsh; the first run builds the image
 ```
 
 Open http://localhost:3080. The agent sees only the folder you launched from.
@@ -59,12 +59,12 @@ docker compose up
 | `agents/dsh/.harness/` | `/dsh` (`$DSH_HOME`) | Profiles, plugins, `settings.yaml`, credentials |
 | `agents/dsh/.deps/` | `/opt/dsh` | Full harness dependency tree |
 
-Both `.harness/` and `.deps/` are created automatically next to `dsh.sh` and survive container removal:
+Both `.harness/` and `.deps/` are created automatically under `agents/dsh/` and survive container removal:
 
 - `.harness/` keeps your settings, plugins, and stored credentials across upgrades.
 - `.deps/` is seeded from the image on **first start only**; after that, plugins installed with `dsh plugin add` persist and nothing is reinstalled per boot.
 
-Both folders must be writable by the container's `node` user (uid 1000). On macOS Docker Desktop this just works; on Linux `dsh.sh` attempts a passwordless `chown`, otherwise:
+Both folders must be writable by the container's `node` user (uid 1000). On macOS Docker Desktop this just works; on Linux the CLI attempts a passwordless `chown`, otherwise:
 
 ```bash
 sudo chown -R 1000:1000 .harness .deps
@@ -74,7 +74,7 @@ Add both folders to `.gitignore` — they are machine-local state (and `.harness
 
 ## Configuration
 
-Copy `.env.example` to `.env` for `docker compose`, or export the variables directly for `dsh.sh`.
+Copy `.env.example` to `.env` for `docker compose`, or export the variables in your shell.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -93,8 +93,8 @@ API keys are read from your environment at runtime; nothing secret is baked into
 Any dsh command runs inside the same container setup:
 
 ```bash
-./dsh.sh plugin --profile web add <package>
-./dsh.sh --version
+agentdorm run dsh plugin --profile web add <package>
+agentdorm run dsh --version
 ```
 
 The image rebuilds automatically whenever `Dockerfile` or `entrypoint.sh` changes (fingerprint label), so an outdated image can't shadow fixes. Force it manually with `docker build -t dsh-web:local .`
@@ -115,6 +115,19 @@ The image rebuilds automatically whenever `Dockerfile` or `entrypoint.sh` change
 
 - **`container ... is already running (port busy)`** — a previous crashed run left a live container (its `socat` bridge can keep it alive even after `exec` fails). Stop it: `docker rm -f dsh-$(basename $PWD)-$DSH_PORT`.
 - **Container fails writing to `.harness/` or `.deps/`** (Linux) — fix ownership: `sudo chown -R 1000:1000 .harness .deps`.
-- **Provider errors like `MISSING_CREDENTIAL`** — the env var named in `apiKeyEnv` isn't set in the environment that launched the container. Re-export the key and relaunch via `dsh.sh`.
+- **Provider errors like `MISSING_CREDENTIAL`** — the env var named in `apiKeyEnv` isn't set in the environment that launched the container. Re-export the key and relaunch with `dsh`.
 - **Stale behavior after editing scripts** — should rebuild automatically; force with `docker build --no-cache -t dsh-web:local .`
 - **Migrating from the old named-volume setup** — copy the old volume contents into `.harness/`: `docker run --rm -v dsh-config:/from -v "$PWD/.harness":/to alpine cp -a /from/. /to/`
+
+## As a resident
+
+A named, long-lived dsh with its own memory, port and dorm inbox:
+
+```bash
+agentdorm new <name> --agent dsh --description "the domain it should master"
+agentdorm up <name>
+agentdorm url <name>
+```
+
+Its state lives in `residents/<name>/.harness/` instead of `agents/dsh/.harness/`. See the [root README](../../README.md#residents).
+
