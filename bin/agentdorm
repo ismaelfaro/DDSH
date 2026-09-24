@@ -209,12 +209,12 @@ cmd_ps() {
   ad_require_docker
   local rows
   rows="$(docker ps --filter "label=$AD_LABEL.agent" --format \
-    '{{.Names}}|{{.Label "agentdorm.agent"}}|{{.Label "agentdorm.resident"}}|{{.Label "agentdorm.port"}}|{{.Label "agentdorm.url-path"}}|{{.Status}}|{{.Label "agentdorm.workspace"}}')"
+    '{{.Names}}|{{.Label "agentdorm.agent"}}|{{.Label "agentdorm.dorm-name"}}|{{.Label "agentdorm.port"}}|{{.Label "agentdorm.url-path"}}|{{.Status}}|{{.Label "agentdorm.workspace"}}')"
   if [ -z "$rows" ]; then echo "(no AgentDorm containers running)"; return 0; fi
   printf '%-30s %-10s %-34s %-16s %s\n' CONTAINER AGENT URL STATUS WORKSPACE
-  printf '%s\n' "$rows" | while IFS='|' read -r name agent _res port path status ws; do
+  printf '%s\n' "$rows" | while IFS='|' read -r name agent dorm_name port path status ws; do
     local where="http://localhost:$port$path"
-    [ -n "$port" ] || where="(worker: dorm send $name)"
+    [ -n "$port" ] || where="worker: send $dorm_name <task>"
     printf '%-30s %-10s %-34s %-16s %s\n' "$name" "$agent" "$where" "$(printf '%s' "$status" | cut -c1-16)" "$ws"
   done
   docker ps --filter "label=$AD_LABEL.gate-for" --format '  gate {{.Names}} ({{.Status}})'
@@ -345,9 +345,9 @@ cmd_doctor() {
   echo "residents"
   for n in $(ad_residents); do
     ad_load_resident "$n"
-    if [ "$(ad_resident_status "$n")" = "running" ]; then printf '  up    %s on %s\n' "$n" "$RES_PORT"
-    elif ad_port_busy "$RES_PORT"; then printf '  FAIL  %s: port %s taken by %s\n' "$n" "$RES_PORT" "$(ad_port_holder "$RES_PORT")"; ok=0
-    else printf '  down  %s (port %s free)\n' "$n" "$RES_PORT"; fi
+    if [ "$(ad_resident_status "$n")" = "running" ]; then printf '  up    %s %s\n' "$n" "${RES_PORT:+on $RES_PORT}"
+    elif [ -n "$RES_PORT" ] && ad_port_busy "$RES_PORT"; then printf '  FAIL  %s: port %s taken by %s\n' "$n" "$RES_PORT" "$(ad_port_holder "$RES_PORT")"; ok=0
+    else printf '  down  %s%s\n' "$n" "${RES_PORT:+ (port $RES_PORT free)}"; fi
   done
   [ "$ok" = 1 ] && echo "all good" || { echo "some checks failed"; return 1; }
 }
