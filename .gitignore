@@ -6,14 +6,27 @@
 **/.deps/
 **/.DHC/
 
-# Agent workspaces, when someone launches an agent from inside this repo.
-# Harnesses scaffold these into their work root on first run.
-**/workspace/
-AGENTS.md
-BOOTSTRAP.md
-IDENTITY.md
-SOUL.md
-USER.md
+# Residents: each one's state, workspace and identity is machine-local. Only
+# the committed examples under examples/residents/ are source.
+/residents/
+
+# The dorm commons: messages agents send each other. Runtime data, not source.
+/commons/
+
+# What a harness scaffolds into its work root on first run, for when someone
+# launches an agent from inside its own directory in this repo. Scoped to
+# agents/ so a top-level AGENTS.md for contributors stays trackable.
+agents/*/AGENTS.md
+agents/*/BOOTSTRAP.md
+agents/*/DREAMS.md
+agents/*/HEARTBEAT.md
+agents/*/IDENTITY.md
+agents/*/MEMORY.md
+agents/*/SOUL.md
+agents/*/TOOLS.md
+agents/*/USER.md
+agents/*/memory/
+agents/*/workspace/
 
 # ── Secrets ───────────────────────────────────────────────────────────────
 # Provider API keys live in the environment, never in the tree. `.env.example`
