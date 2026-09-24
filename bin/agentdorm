@@ -309,7 +309,10 @@ cmd_build() {
   ad_require_docker
   for a in "$@"; do case "$a" in --force) force="--force" ;; --all) ;; *) agents="$agents $a" ;; esac; done
   [ -n "$agents" ] || agents="$(ad_agents | tr '\n' ' ')"
-  for a in $agents; do ad_load_agent "$a"; ad_ensure_image $force; done
+  for a in $agents; do
+    if [ "$a" = gate ]; then ad_gate_ensure_image; continue; fi
+    ad_load_agent "$a"; ad_ensure_image $force
+  done
 }
 
 cmd_agents() {

@@ -40,6 +40,19 @@ ad_gate_default_allow() {
   return 0
 }
 
+# Rebuild when missing or when gate/ changed since the last build -- the same
+# fingerprint rule as the agent images, so a fix here reaches running dorms.
+ad_gate_ensure_image() {
+  local fp current
+  fp="$(cat "$AD_ROOT/gate/Dockerfile" "$AD_ROOT/gate/gate-entrypoint.sh" | ad_sha256)"
+  current="$(docker image inspect -f '{{ index .Config.Labels "agentdorm-gate-fingerprint" }}' "$AD_GATE_IMAGE" 2>/dev/null || true)"
+  if [ "$current" != "$fp" ]; then
+    ad_log "building $AD_GATE_IMAGE ..."
+    docker build --label "agentdorm-gate-fingerprint=$fp" -t "$AD_GATE_IMAGE" "$AD_ROOT/gate" >&2 \
+      || ad_die "build of $AD_GATE_IMAGE failed"
+  fi
+}
+
 # ad_gate_up <resident> <host-port> <target-host> <target-port> <allow...>
 ad_gate_up() {
   local res="$1" port="$2" target="$3:$4" gate net
@@ -47,10 +60,7 @@ ad_gate_up() {
   gate="$(ad_gate_name "$res")"
   net="$(ad_gate_network "$res")"
 
-  if ! docker image inspect "$AD_GATE_IMAGE" >/dev/null 2>&1; then
-    ad_log "building $AD_GATE_IMAGE ..."
-    docker build -t "$AD_GATE_IMAGE" "$AD_ROOT/gate" >&2 || ad_die "build of $AD_GATE_IMAGE failed"
-  fi
+  ad_gate_ensure_image
   docker network inspect "$net" >/dev/null 2>&1 \
     || docker network create --internal --label "$AD_LABEL=network" "$net" >/dev/null
   ad_ensure_network

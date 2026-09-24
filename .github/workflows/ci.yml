@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: Build every agent image (slow)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x -S warning bin/agentdorm lib/*.sh dorm/dorm dorm/dorm-worker \
+            gate/gate-entrypoint.sh install.sh tests/run.sh \
+            agents/*/entrypoint.sh agents/*/hooks.sh agents/*/*.sh agents/*/agent-task
+      - name: hadolint
+        run: |
+          for f in agents/*/Dockerfile gate/Dockerfile; do
+            echo "== $f"
+            docker run --rm -i -v "$PWD/.hadolint.yaml:/.config/hadolint.yaml:ro" \
+              hadolint/hadolint hadolint - < "$f"
+          done
+      - name: python syntax
+        run: python3 -m py_compile dorm/dorm-mcp
+
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyyaml
+      - run: tests/run.sh
+
+  # macOS ships bash 3.2 as /bin/bash: the CLI must keep working there.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: /bin/bash --version | head -n 1
+      - run: /bin/bash tests/run.sh
+
+  images:
+    runs-on: ubuntu-latest
+    needs: [lint, test-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [gate, loomloop, nanoloop, hermes, openclaw, dsh, openhands]
+    steps:
+      - uses: actions/checkout@v4
+      - name: decide
+        id: decide
+        run: |
+          # The small images always build; the heavy ones on demand.
+          case "${{ matrix.target }}" in
+            gate|loomloop) echo "build=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "build=${{ inputs.build_all || 'false' }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: build
+        if: steps.decide.outputs.build == 'true'
+        run: |
+          if [ "${{ matrix.target }}" = gate ]; then
+            docker build -t agentdorm-gate:ci gate
+          else
+            docker build -t "${{ matrix.target }}:ci" "agents/${{ matrix.target }}"
+          fi
+      - name: gate allowlist smoke test
+        if: matrix.target == 'gate'
+        run: |
+          docker network create --internal adint
+          docker run -d --name gate --network bridge -e GATE_ALLOW="example.com" agentdorm-gate:ci
+          docker network connect --alias gate adint gate
+          sleep 2
+          ok=$(docker run --rm --network adint curlimages/curl -s -o /dev/null -w '%{http_code}' -x http://gate:8888 https://example.com)
+          bad=$(docker run --rm --network adint curlimages/curl -s -o /dev/null -w '%{http_code}' -x http://gate:8888 https://github.com || true)
+          direct=$(docker run --rm --network adint curlimages/curl -s -o /dev/null -m 5 -w '%{http_code}' https://example.com || true)
+          echo "allowed=$ok refused=$bad direct=$direct"
+          docker logs gate
+          [ "$ok" = 200 ] && [ "$bad" != 200 ] && [ "$direct" != 200 ]

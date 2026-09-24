@@ -1,0 +1,6 @@
+# Pinning every apt/apk package version would freeze security updates in the
+# agent images; the agents themselves are pinned (build args) instead.
+ignored:
+  - DL3008  # apt-get install without versions
+  - DL3018  # apk add without versions
+  - DL3066  # named USER: images create the user themselves with a fixed uid
