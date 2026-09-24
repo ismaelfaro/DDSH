@@ -152,7 +152,10 @@ ad_launch() {
   fi
 
   # shellcheck disable=SC2086
-  set -- docker run --rm --init ${args[@]+"${args[@]}"} ${tty[@]+"${tty[@]}"} \
+  # AGENTDORM_KEEP=1 keeps a container that exits, so `docker logs` can say why.
+  local rm_flag="--rm"
+  [ -n "${AGENTDORM_KEEP:-}" ] && rm_flag=""
+  set -- docker run $rm_flag --init ${args[@]+"${args[@]}"} ${tty[@]+"${tty[@]}"} \
     --name "$LAUNCH_NAME" $net_args --network-alias "$LAUNCH_DORM_NAME" \
     ${port_args:+-p "$port_args"} \
     --label "$AD_LABEL.agent=$AGENT_NAME" \

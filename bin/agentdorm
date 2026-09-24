@@ -265,7 +265,11 @@ cmd_stop() {
     if [ -f "$(ad_resident_dir "$n")/resident.yaml" ]; then
       ad_resident_down "$n"
     else
-      docker rm -f "$n" >/dev/null 2>&1 && ad_log "$n stopped" || ad_warn "no container named $n"
+      if docker container inspect "$n" >/dev/null 2>&1; then
+        ad_stop_container "$n"; ad_log "$n stopped"
+      else
+        ad_warn "no container named $n"
+      fi
     fi
   done
 }

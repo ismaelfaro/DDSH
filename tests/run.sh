@@ -316,8 +316,10 @@ test_dsh_url_hook_reads_token_from_logs() {
 
 test_openclaw_url_hook_keeps_fragment() {
   ad_load_agent openclaw
-  docker() { printf '{"ok":true,"url":"http://127.0.0.1:18789/#token=t0k3n","port":18789}\n'; }
+  docker() { printf '[gateway] ready\nopenclaw: Control UI http://localhost:18789/#token=t0k3n\n'; }
   eq "http://localhost:18800/#token=t0k3n" "$(agent_url c 18800)"
+  docker() { printf 'openclaw: seeding\n'; }
+  has "$(agent_url c 18800)" "still starting"
 }
 
 # ------------------------------------------------------------------ CLI

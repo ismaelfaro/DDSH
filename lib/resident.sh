@@ -140,7 +140,7 @@ ad_resident_up() {
 
 ad_resident_down() {
   local name="$1"
-  docker rm -f "$(ad_resident_container "$name")" >/dev/null 2>&1 || true
+  ad_stop_container "$(ad_resident_container "$name")"
   ad_gate_down "$name"
   ad_log "$name stopped"
 }

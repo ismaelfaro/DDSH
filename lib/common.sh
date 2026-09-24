@@ -123,3 +123,12 @@ ad_fix_ownership() {
     fi
   done
 }
+
+# Stop a container gracefully: SIGTERM, up to 30s to shut down, then removal.
+# Agents flush state and release locks on SIGTERM -- OpenClaw's gateway, for
+# one, otherwise leaves a state-directory lease that blocks the next start for
+# minutes. `docker rm -f` alone is SIGKILL.
+ad_stop_container() {
+  docker stop -t 30 "$1" >/dev/null 2>&1 || true
+  docker rm -f "$1" >/dev/null 2>&1 || true
+}

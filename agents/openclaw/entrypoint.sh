@@ -60,10 +60,14 @@ if [ ! -f "$OPENCLAW_STATE_DIR/openclaw.json" ]; then
     echo "openclaw: first start — onboarding with $auth_choice ..." >&2
     # --accept-risk is what --non-interactive requires: this agent runs shell
     # commands, and here it can only reach /workspace.
+    # --skip-health: onboarding would probe a gateway that only starts below.
+    # --skip-daemon/--skip-ui/--skip-channels: no service manager, browser, or
+    # inbound network in a container; channels are paired later by hand.
     openclaw onboard --non-interactive --accept-risk \
       --auth-choice "$auth_choice" "${key_flag[@]}" \
-      --workspace /workspace >&2 || \
-      echo "openclaw: onboarding failed; run './openclaw.sh onboard' yourself" >&2
+      --workspace /workspace \
+      --skip-health --skip-daemon --skip-ui --skip-channels >&2 || \
+      echo "openclaw: onboarding failed; run 'agentdorm shell <name> openclaw onboard' yourself" >&2
   else
     echo "openclaw: no provider key in the environment (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY); skipping onboarding" >&2
   fi
@@ -76,7 +80,10 @@ fi
 consent_to_plugins() {
   local log=/tmp/gateway-preflight.log ids id pid
   : > "$log"
-  timeout 120 openclaw gateway run --bind loopback --port "$OPENCLAW_INTERNAL_PORT" > "$log" 2>&1 &
+  # Started directly, not under `timeout`: killing a `timeout` wrapper can
+  # orphan the gateway, which then keeps its state-directory lease and blocks
+  # the real gateway below. The loop bounds the wait instead.
+  openclaw gateway run --bind loopback --port "$OPENCLAW_INTERNAL_PORT" > "$log" 2>&1 &
   pid=$!
   for _ in $(seq 1 60); do
     grep -q "requires capability consent" "$log" && break
@@ -84,10 +91,13 @@ consent_to_plugins() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 2
   done
-  kill "$pid" 2>/dev/null || true
+  # SIGTERM and wait: a gateway that shuts down cleanly releases its lease.
+  kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
 
-  ids="$(grep -oE 'Plugin "[^"]+" requires capability consent' "$log" | cut -d'"' -f2 | sort -u)"
+  # `|| true`: no plugin needing consent is the normal case on recent
+  # releases, and a no-match grep must not trip set -e/pipefail.
+  ids="$(grep -oE 'Plugin "[^"]+" requires capability consent' "$log" | cut -d'"' -f2 | sort -u || true)"
   [ -n "$ids" ] || return 0
   for id in $ids; do
     echo "openclaw: accepting capabilities for plugin '$id' ..." >&2

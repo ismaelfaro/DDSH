@@ -14,7 +14,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM node:22-bookworm-slim
+# OpenClaw 2026.9+ requires Node >=24.16 (<25) or >=26.1.
+FROM node:24-bookworm-slim
 
 # Tooling the agent expects in its shell, plus socat for the port bridge.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,8 +38,10 @@ RUN mkdir -p /openclaw /workspace /opt/openclaw /opt/openclaw-seed \
 USER node
 
 # Version baked into the image seed. Change it with:
-#   docker build --build-arg OPENCLAW_VERSION=2026.8.2 -t openclaw-web:local .
-ARG OPENCLAW_VERSION=latest
+#   docker build --build-arg OPENCLAW_VERSION=<version> -t openclaw-web:local .
+# Pinned, not `latest`: an upstream release that raises its Node floor (as
+# 2026.9.6 did) would otherwise break the next rebuild without warning.
+ARG OPENCLAW_VERSION=2026.9.6
 ENV OPENCLAW_VERSION=${OPENCLAW_VERSION}
 
 # Built at its final path and copied to the seed: npm bakes absolute paths into
