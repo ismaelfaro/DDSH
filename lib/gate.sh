@@ -58,10 +58,13 @@ ad_gate_up() {
 
   # Start on the normal network (so the port can be published), then join the
   # resident's internal network under the name its proxy settings point at.
+  local publish=()
+  # Workers have no UI to carry: the gate is then only their egress proxy.
+  [ -n "$port" ] && publish=(-p "127.0.0.1:$port:$AD_GATE_LISTEN")
   docker run -d --init --name "$gate" --network "$AD_NETWORK" \
-    -p "127.0.0.1:$port:$AD_GATE_LISTEN" \
+    ${publish[@]+"${publish[@]}"} \
     --label "$AD_LABEL.gate-for=$res" \
-    -e "GATE_ALLOW=$*" -e "GATE_TARGET=$target" -e "GATE_LISTEN=$AD_GATE_LISTEN" \
+    -e "GATE_ALLOW=$*" -e "GATE_TARGET=${port:+$target}" -e "GATE_LISTEN=${port:+$AD_GATE_LISTEN}" \
     "$AD_GATE_IMAGE" >/dev/null || ad_die "could not start the egress gate for $res"
   docker network connect --alias "$gate" "$net" "$gate" \
     || ad_die "could not attach the gate to $net"

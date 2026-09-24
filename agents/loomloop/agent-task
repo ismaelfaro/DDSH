@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# One dorm message = one LoomLoop run. The body is either a Python module with
+# a main() -- run in this resident's sandbox -- or `run <path>` / `demo`.
+set -euo pipefail
+body="$(cat)"
+first="$(printf '%s\n' "$body" | sed -n '/[^[:space:]]/{p;q;}')"
+case "$first" in
+  demo*) exec python -m loomloop demo ;;
+  "run "*) exec python -m loomloop run "${first#run }" ;;
+esac
+dir=/workspace/.loomloop-tasks
+mkdir -p "$dir"
+file="$dir/task_$(date -u +%Y%m%dT%H%M%S)_$$.py"
+# Messages often wrap code in a Markdown fence; keep only what is inside it.
+if printf '%s\n' "$body" | grep -q '^```'; then
+  printf '%s\n' "$body" | awk '/^```/{f=!f; next} f' > "$file"
+else
+  printf '%s\n' "$body" > "$file"
+fi
+echo "loomloop: running $file" >&2
+exec python -m loomloop run "$file"

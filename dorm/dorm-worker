@@ -1,0 +1,83 @@
+#!/bin/sh
+# Copyright 2026 AgentDorm contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# dorm-worker -- turn an agent without a web UI into a dorm resident.
+#
+# Every message that arrives in this resident's inbox is a task: its body goes
+# to `agent-task` (provided by the agent's image) on stdin, and the outcome --
+# exit status and the tail of the output -- is sent back to whoever asked.
+# The full output of each task is kept under $DORM_WORKER_LOGS.
+#
+# Replies (messages carrying In-Reply-To) are filed, never executed, so two
+# workers answering each other cannot loop.
+#
+# Env: DORM_NAME, DORM_DIR, DORM_WORKER_POLL (seconds, default 5),
+#      DORM_WORKER_LOGS (where task logs go; images point it into their
+#      persistent state), DORM_WORKER_TAIL (output lines in a reply, default 60).
+set -u
+
+DIR="${DORM_DIR:-/dorm}"
+ME="${DORM_NAME:?DORM_NAME is not set}"
+POLL="${DORM_WORKER_POLL:-5}"
+TAIL="${DORM_WORKER_TAIL:-60}"
+LOGS="${DORM_WORKER_LOGS:-/tmp/dorm-worker}"
+BOX="$DIR/inbox/$ME"
+umask 000
+mkdir -p "$BOX/new" "$BOX/read" "$LOGS"
+
+command -v agent-task >/dev/null 2>&1 || { echo "dorm-worker: this image has no agent-task command" >&2; exit 1; }
+
+hdr() { sed -n "s/^$2: //p;/^\$/q" "$1" | head -n 1; }
+
+echo "dorm-worker: $ME ready; each message in its inbox is a task" >&2
+while :; do
+  for f in "$BOX"/new/*.md; do
+    [ -f "$f" ] || continue
+    id="$(basename "$f" .md)"
+    from="$(hdr "$f" From)"
+    subject="$(hdr "$f" Subject)"
+    body="$LOGS/$id.task"
+    sed '1,/^$/d' "$f" > "$body"
+    mv "$f" "$BOX/read/"
+
+    if [ -n "$(hdr "$BOX/read/$id.md" In-Reply-To)" ]; then
+      echo "dorm-worker: $id from $from is a reply; filed, not run" >&2
+      continue
+    fi
+    if [ "$from" = "$ME" ] || [ -z "$(tr -d '[:space:]' < "$body")" ]; then
+      echo "dorm-worker: $id skipped (from myself or empty)" >&2
+      continue
+    fi
+
+    echo "dorm-worker: $id from $from -- running" >&2
+    started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    agent-task < "$body" > "$LOGS/$id.log" 2>&1
+    status=$?
+    echo "dorm-worker: $id finished with status $status" >&2
+
+    {
+      if [ "$status" = 0 ]; then echo "Done."; else echo "Failed (exit status $status)."; fi
+      echo
+      echo "Task started $started, finished $(date -u +%Y-%m-%dT%H:%M:%SZ)."
+      echo "Last $TAIL lines of output (full log: $LOGS/$id.log inside $ME):"
+      echo
+      echo '```'
+      tail -n "$TAIL" "$LOGS/$id.log"
+      echo '```'
+    } | dorm send "$from" --reply-to "$id" -s "Re: ${subject:-your task}" >/dev/null \
+      || echo "dorm-worker: could not reply to $from" >&2
+  done
+  sleep "$POLL"
+done

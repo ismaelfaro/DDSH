@@ -33,7 +33,7 @@ ad_load_agent() {
   AGENT_TITLE="" AGENT_UPSTREAM="" AGENT_IMAGE="" AGENT_PORT="" AGENT_CONTAINER_PORT=""
   AGENT_URL_PATH="/" AGENT_STATE_MOUNT="" AGENT_DEPS_MOUNT="" AGENT_WORKSPACE_MOUNTS=""
   AGENT_CMD="" AGENT_UID=1000 AGENT_FINGERPRINT_FILES="Dockerfile entrypoint.sh"
-  AGENT_ENV="" AGENT_IDENTITY="none"
+  AGENT_ENV="" AGENT_IDENTITY="none" AGENT_KIND="web" AGENT_WORKDIR="" AGENT_WORKER_CMD="worker"
   unset -f agent_pre_run agent_url 2>/dev/null || true
   # shellcheck source=/dev/null
   . "$dir/agent.conf"
@@ -102,12 +102,13 @@ ad_launch() {
   commons="$(ad_commons_dir)"
   ad_commons_register "$LAUNCH_DORM_NAME" "$AGENT_NAME" "$LAUNCH_NAME" "$LAUNCH_PORT"
   mount_args+=(-v "$commons:/dorm" -v "$AD_ROOT/dorm/dorm:/usr/local/bin/dorm:ro"
-               -v "$AD_ROOT/dorm/dorm-mcp:/usr/local/bin/dorm-mcp:ro")
+               -v "$AD_ROOT/dorm/dorm-mcp:/usr/local/bin/dorm-mcp:ro"
+               -v "$AD_ROOT/dorm/dorm-worker:/usr/local/bin/dorm-worker:ro")
 
   local var
   for var in $AGENT_ENV; do env_args+=(-e "$var"); done
-  env_args+=(-e "${AGENT_PREFIX}_PORT=$LAUNCH_PORT"
-             -e "HOST_WORKSPACE=$LAUNCH_WORKSPACE"
+  [ -n "$LAUNCH_PORT" ] && [ "$AGENT_KIND" != "worker" ] && env_args+=(-e "${AGENT_PREFIX}_PORT=$LAUNCH_PORT")
+  env_args+=(-e "HOST_WORKSPACE=$LAUNCH_WORKSPACE"
              -e "DORM_NAME=$LAUNCH_DORM_NAME"
              -e "DORM_AGENT=$AGENT_NAME"
              -e "DORM_RESIDENT=${LAUNCH_RESIDENT:-}")
@@ -117,6 +118,10 @@ ad_launch() {
   elif [ -t 0 ] && [ -t 1 ]; then
     tty=(-it)
   fi
+
+  # Workers have no web UI: nothing to publish, they are reached through the dorm.
+  [ "$AGENT_KIND" = "worker" ] && LAUNCH_PORT=""
+  [ -n "$AGENT_WORKDIR" ] && first="$AGENT_WORKDIR"
 
   ad_ensure_network
   if [ "${LAUNCH_EGRESS:-open}" = "allowlist" ]; then
@@ -132,7 +137,8 @@ ad_launch() {
                -e "NODE_USE_ENV_PROXY=1")
   else
     net_args="--network $AD_NETWORK"
-    port_args="127.0.0.1:${LAUNCH_PORT}:${AGENT_CONTAINER_PORT}"
+    port_args=""
+    [ -n "$LAUNCH_PORT" ] && port_args="127.0.0.1:${LAUNCH_PORT}:${AGENT_CONTAINER_PORT}"
   fi
 
   if [ "$#" -gt 0 ]; then cmd=("$@")

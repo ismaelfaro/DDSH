@@ -98,6 +98,28 @@ ad_seed_identity() {
         ad_log "$name: identity seeded in $f"
       fi
       ;;
+    nanoloop-memory)
+      # nanoLoop has no persona slot, but its crew recalls from a Markdown
+      # memory graph before planning; a `user`-type note is where who-am-I lives.
+      f="$state/Memory/identity.md"
+      if [ ! -f "$f" ]; then
+        mkdir -p "$state/Memory"
+        {
+          echo "---"
+          echo "name: identity"
+          echo "description: Who this resident is, the domain it must master, and how to reach its housemates. Recall before every task."
+          echo "metadata:"
+          echo "  type: user"
+          echo "---"
+          ad_identity_text "$name" "$desc"
+        } > "$f"
+        ad_log "$name: identity seeded in $f"
+      fi
+      ;;
+    none-needed)
+      # A framework, not a persona: the resident's description is its dorm
+      # summary and nothing more.
+      ;;
     none|'')
       ad_warn "$name: ${AGENT_TITLE:-this agent} keeps its persona in its own settings; set the description there (see its README)"
       ;;

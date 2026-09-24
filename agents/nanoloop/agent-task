@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# One dorm message = one nanoLoop session: the message body is the task.
+set -euo pipefail
+task="$(cat)"
+cd /nanoloop
+exec nanoloop "$task"

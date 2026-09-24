@@ -46,8 +46,14 @@ ad_commons_register() {
   {
     printf 'agent=%s\n' "$2"
     printf 'container=%s\n' "$3"
-    printf 'host_url=http://localhost:%s%s\n' "$4" "$AGENT_URL_PATH"
-    printf 'internal_url=http://%s:%s\n' "$1" "$AGENT_CONTAINER_PORT"
+    if [ "${AGENT_KIND:-web}" = "worker" ]; then
+      # Workers take tasks from their inbox; there is no URL to open.
+      printf 'kind=worker\n'
+    else
+      printf 'kind=web\n'
+      printf 'host_url=http://localhost:%s%s\n' "$4" "$AGENT_URL_PATH"
+      printf 'internal_url=http://%s:%s\n' "$1" "$AGENT_CONTAINER_PORT"
+    fi
     printf 'resident=%s\n' "${LAUNCH_RESIDENT:-}"
     printf 'summary=%s\n' "$summary"
     printf 'registered=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

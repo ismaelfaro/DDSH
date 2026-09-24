@@ -56,7 +56,7 @@ ad_load_resident() {
   RES_ALLOW="$(ad_yaml_get "$f" allow | grep -v '^\[\]$' | tr '\n' ' ' || true)"
   ws="$(ad_yaml_get "$f" workspace)"
   [ -n "$RES_AGENT" ] || ad_die "$f: 'agent:' is required"
-  ad_is_number "$RES_PORT" || ad_die "$f: 'port:' must be a number"
+  [ -z "$RES_PORT" ] || ad_is_number "$RES_PORT" || ad_die "$f: 'port:' must be a number"
   case "${RES_EGRESS:-open}" in open|allowlist) ;; *) ad_die "$f: 'egress:' must be open or allowlist" ;; esac
   [ -n "$RES_EGRESS" ] || RES_EGRESS="open"
   case "$ws" in
@@ -72,7 +72,7 @@ ad_claimed_ports() {
   local r
   for r in $(ad_residents); do
     ad_yaml_get "$(ad_resident_dir "$r")/resident.yaml" port
-  done
+  done | grep -v '^$' || true
 }
 
 # Residents get ports from <agent default + 100> upward, clear of the range
@@ -103,7 +103,10 @@ ad_resident_up() {
     ad_log "$name already running: $(ad_resident_url "$name")"
     return 0
   fi
-  ad_port_busy "$RES_PORT" && ad_die "$name: port $RES_PORT is in use${RES_PORT:+ ($(ad_port_holder "$RES_PORT"))}. Change 'port:' in $RES_DIR/resident.yaml"
+  if [ "$AGENT_KIND" != "worker" ]; then
+    [ -n "$RES_PORT" ] || ad_die "$name: 'port:' is required for $AGENT_TITLE (it has a web UI)"
+    ad_port_busy "$RES_PORT" && ad_die "$name: port $RES_PORT is in use ($(ad_port_holder "$RES_PORT")). Change 'port:' in $RES_DIR/resident.yaml"
+  fi
 
   mkdir -p "$RES_WORKSPACE" "$RES_DIR/.harness"
   ad_ensure_image
@@ -125,8 +128,14 @@ ad_resident_up() {
   LAUNCH_RESIDENT="$name"
   LAUNCH_EGRESS="$RES_EGRESS"
   LAUNCH_SUMMARY="$summary"
-  ad_launch
-  ad_log "$name ($RES_AGENT) up: $(ad_resident_url "$name")"
+  if [ "$AGENT_KIND" = "worker" ]; then
+    # A worker resident turns each message in its inbox into a task.
+    ad_launch "$AGENT_WORKER_CMD"
+    ad_log "$name ($RES_AGENT worker) up: give it work with  agentdorm send $name \"<task>\""
+  else
+    ad_launch
+    ad_log "$name ($RES_AGENT) up: $(ad_resident_url "$name")"
+  fi
 }
 
 ad_resident_down() {
@@ -140,7 +149,9 @@ ad_resident_url() {
   local name="$1"
   ad_load_resident "$name"
   ad_load_agent "$RES_AGENT"
-  if [ "$(ad_resident_status "$name")" = "running" ] && command -v agent_url >/dev/null 2>&1; then
+  if [ "$AGENT_KIND" = "worker" ]; then
+    printf '(worker, no web UI) agentdorm send %s "<task>"; replies arrive in: agentdorm inbox\n' "$name"
+  elif [ "$(ad_resident_status "$name")" = "running" ] && command -v agent_url >/dev/null 2>&1; then
     agent_url "$(ad_resident_container "$name")" "$RES_PORT"
   else
     printf 'http://localhost:%s%s\n' "$RES_PORT" "$AGENT_URL_PATH"
@@ -155,7 +166,9 @@ ad_resident_new() {
   dir="$(ad_resident_dir "$name")"
   [ -e "$dir/resident.yaml" ] && ad_die "resident '$name' already exists: $dir/resident.yaml"
   ad_load_agent "$agent"
-  if [ -z "$port" ]; then
+  if [ "$AGENT_KIND" = "worker" ]; then
+    port=""
+  elif [ -z "$port" ]; then
     port="$(ad_next_resident_port "$AGENT_PORT")" || ad_die "no free port found; pass --port"
   fi
   mkdir -p "$dir"
@@ -166,7 +179,7 @@ ad_resident_new() {
     echo "# the agent owns its identity file and refines it itself."
     echo "name: $name"
     echo "agent: $agent"
-    echo "port: $port"
+    [ -n "$port" ] && echo "port: $port"
     [ -n "$ws" ] && echo "workspace: $ws"
     echo "description: |"
     printf '%s\n' "$desc" | sed 's/^/  /'

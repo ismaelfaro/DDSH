@@ -108,10 +108,14 @@ cmd_run() {
   fi
   [ -n "$detach" ] || detach="$(ad_env "${AGENT_PREFIX}_DETACH")"
   [ -n "$port" ] || port="$AGENT_PORT"
-  ad_is_number "$port" || ad_die "--port must be a number"
+  [ "$AGENT_KIND" = "worker" ] || ad_is_number "$port" || ad_die "--port must be a number"
 
   ad_ensure_image
-  port="$(ad_pick_port "$port" "$explicit")"
+  if [ "$AGENT_KIND" = "worker" ]; then
+    port=""   # no web UI; a run is one task in the foreground
+  else
+    port="$(ad_pick_port "$port" "$explicit")"
+  fi
   local state="$AGENT_DIR/.harness"
   mkdir -p "$state"
   [ -n "$AGENT_DEPS_MOUNT" ] && mkdir -p "$AGENT_DIR/.deps"
@@ -120,7 +124,8 @@ cmd_run() {
   fi
 
   slug="$(ad_slug "$(basename "$PWD")")"
-  LAUNCH_NAME="$agent-$slug-$port"
+  # Workers: several one-off tasks may run in the same folder at once.
+  LAUNCH_NAME="$agent-$slug-${port:-$$}"
   LAUNCH_DORM_NAME="$agent-$slug"
   LAUNCH_WORKSPACE="$PWD"
   LAUNCH_STATE="$state"
@@ -129,7 +134,11 @@ cmd_run() {
   LAUNCH_RESIDENT=""
   LAUNCH_EGRESS="open"
   LAUNCH_SUMMARY="$AGENT_TITLE working in $PWD"
-  ad_log "$AGENT_TITLE on $PWD -> http://localhost:$port$AGENT_URL_PATH"
+  if [ -n "$port" ]; then
+    ad_log "$AGENT_TITLE on $PWD -> http://localhost:$port$AGENT_URL_PATH"
+  else
+    ad_log "$AGENT_TITLE on $PWD"
+  fi
   ad_launch "$@"
   [ -n "$detach" ] && ad_log "running in the background as $LAUNCH_NAME (stop: agentdorm stop $LAUNCH_NAME)"
   return 0
@@ -192,7 +201,7 @@ cmd_ls() {
     ad_load_resident "$n"
     status="$(ad_resident_status "$n" 2>/dev/null || echo "?")"
     desc="$(printf '%s' "$RES_DESCRIPTION" | head -n 1 | cut -c1-60)"
-    printf '%-18s %-10s %-6s %-9s %-10s %s\n' "$n" "$RES_AGENT" "$RES_PORT" "$status" "$RES_EGRESS" "${desc:--}"
+    printf '%-18s %-10s %-6s %-9s %-10s %s\n' "$n" "$RES_AGENT" "${RES_PORT:--}" "$status" "$RES_EGRESS" "${desc:--}"
   done
 }
 
@@ -204,7 +213,9 @@ cmd_ps() {
   if [ -z "$rows" ]; then echo "(no AgentDorm containers running)"; return 0; fi
   printf '%-30s %-10s %-34s %-16s %s\n' CONTAINER AGENT URL STATUS WORKSPACE
   printf '%s\n' "$rows" | while IFS='|' read -r name agent _res port path status ws; do
-    printf '%-30s %-10s %-34s %-16s %s\n' "$name" "$agent" "http://localhost:$port$path" "$(printf '%s' "$status" | cut -c1-16)" "$ws"
+    local where="http://localhost:$port$path"
+    [ -n "$port" ] || where="(worker: dorm send $name)"
+    printf '%-30s %-10s %-34s %-16s %s\n' "$name" "$agent" "$where" "$(printf '%s' "$status" | cut -c1-16)" "$ws"
   done
   docker ps --filter "label=$AD_LABEL.gate-for" --format '  gate {{.Names}} ({{.Status}})'
 }
@@ -306,7 +317,7 @@ cmd_agents() {
   printf '%-10s %-24s %-6s %s\n' AGENT TITLE PORT UPSTREAM
   for a in $(ad_agents); do
     ad_load_agent "$a"
-    printf '%-10s %-24s %-6s %s\n' "$a" "$AGENT_TITLE" "$AGENT_PORT" "$AGENT_UPSTREAM"
+    printf '%-10s %-24s %-6s %s\n' "$a" "$AGENT_TITLE" "${AGENT_PORT:-task}" "$AGENT_UPSTREAM"
   done
 }
 

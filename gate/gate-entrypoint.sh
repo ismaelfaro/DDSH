@@ -18,9 +18,9 @@
 #                 admits only subdomains.
 #   GATE_TARGET   host:port of the resident's web UI on the internal network
 #   GATE_LISTEN   port this gate serves that UI on (published by the CLI)
+#                 Both empty for worker residents, which have no UI.
 set -eu
 
-: "${GATE_TARGET:?}" "${GATE_LISTEN:?}"
 mkdir -p /etc/tinyproxy
 
 # One extended regex per allowed domain, anchored on the host name.
@@ -58,7 +58,8 @@ DisableViaHeader Yes
 CONF
 
 echo "gate: allow: $(tr '\n' ' ' < /etc/tinyproxy/filter)" >&2
-echo "gate: forwarding :${GATE_LISTEN} -> ${GATE_TARGET}" >&2
-
-socat "TCP-LISTEN:${GATE_LISTEN},fork,reuseaddr" "TCP:${GATE_TARGET}" &
+if [ -n "${GATE_LISTEN:-}" ] && [ -n "${GATE_TARGET:-}" ]; then
+  echo "gate: forwarding :${GATE_LISTEN} -> ${GATE_TARGET}" >&2
+  socat "TCP-LISTEN:${GATE_LISTEN},fork,reuseaddr" "TCP:${GATE_TARGET}" &
+fi
 exec tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf
