@@ -28,7 +28,7 @@ The first start onboards without prompts using whichever provider key it finds �
 openclaw: Control UI http://localhost:18789/#token=<token>
 ```
 
-**Open that exact URL.** The token in the fragment is what authenticates you; plain `http://localhost:18789` will not let you in. To print it again later:
+**Open that exact URL** (`agentdorm url <name>` prints it again). The token in the fragment is what authenticates you; plain `http://localhost:18789` will not let you in. To print it again later:
 
 ```bash
 docker exec openclaw-<folder>-18789 openclaw dashboard --no-open --json
@@ -62,7 +62,9 @@ Its state lives in `residents/<name>/.harness/` instead of `agents/openclaw/.har
 
 ## Notes
 
-- **The first start is slow (up to two minutes).** The Gateway refuses to report ready while any plugin still needs capability consent, and onboarding installs provider plugins that ask for it — with no prompt to answer inside a container. The entrypoint therefore starts the Gateway once, reads which plugins it named, accepts those, and marks the state directory done. Later starts skip it.
+- **The first start is slow (about three minutes); later ones take about thirty seconds.** Onboarding runs once, and the entrypoint starts the gateway once to learn whether any plugin still needs capability consent (there is no prompt to answer in a container), accepts those, then starts it for real. Recent releases need none, but the check stays cheap insurance.
+- **Stops are graceful.** `agentdorm down`/`stop` send SIGTERM and wait: the gateway holds a lease on its state directory, and a killed gateway leaves it held for minutes.
+- **Node 24.** OpenClaw 2026.9+ requires Node >=24.16; the image is pinned to a verified release (`OPENCLAW_VERSION`).
 - **Loopback only.** The Gateway is the control plane for an agent with shell access and its token sits in a URL. It binds container loopback; socat carries the published port, mapped to the host's `127.0.0.1`. Do not republish on `0.0.0.0` — read OpenClaw's [exposure runbook](https://docs.openclaw.ai/gateway/security/exposure-runbook) first if you need remote access.
 - **Channels are not wired up.** OpenClaw's messaging integrations need per-channel setup and, for most, inbound network access. Pair them yourself with `agentdorm run openclaw channels` if you want them.
 - Keys are passed through from your environment and never written into the image.

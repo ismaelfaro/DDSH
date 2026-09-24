@@ -127,7 +127,10 @@ Create `agents/<name>/` with an `agent.conf`, a `Dockerfile`, an `entrypoint.sh`
 tests/run.sh                  # the suite, on macOS bash 3.2 or Linux
 agentdorm build --force       # rebuild every image
 AGENTDORM_HOME=/tmp/dorm agentdorm …   # residents and commons somewhere disposable
+AGENTDORM_KEEP=1 agentdorm up <name>   # keep a container that exits, to read its logs
 ```
+
+Every agent is pinned to the upstream release it was last verified with (`ARG *_VERSION` / `*_REF` in its Dockerfile), because tracking `latest` broke builds twice: OpenClaw raised its Node floor and dsh added a URL token. Bump deliberately, rebuild, and run the agent. Images rebuild automatically when their Dockerfile or entrypoint changes, and the persisted `.deps/` copy is replaced when its image does.
 
 CI runs shellcheck, hadolint, the suite on Linux and macOS, and builds the images.
 
