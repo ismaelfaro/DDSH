@@ -22,13 +22,24 @@ DSH_INTERNAL_PORT="${DSH_INTERNAL_PORT:-3080}"
 # Port socat listens on for the published-port NAT.
 DSH_BRIDGE_PORT="${DSH_BRIDGE_PORT:-13080}"
 
-# /opt/dsh may be a host bind mount (.deps). On first start it is empty, so
-# copy the image's seed install into it once; afterwards plugins installed
-# with `dsh plugin add` and any dependency updates persist across containers.
-if [ ! -e /opt/dsh/package.json ]; then
-  echo "dsh: seeding /opt/dsh from the image (first start only) ..." >&2
-  cp -a /opt/dsh-seed/. /opt/dsh/
-fi
+# /opt/dsh may be a host bind mount (.deps). Fill it from the image's seed on
+# first start, and REPLACE it whenever the image was rebuilt (the seed stamp
+# differs): otherwise an upgrade would keep running the old copy persisted in
+# .deps. Replaced wholesale, not merged, so no stale package shadows a new one.
+refresh_seed() {
+  seed=/opt/dsh-seed target=/opt/dsh
+  if [ -f "$target/.agentdorm-seed" ] && cmp -s "$seed/.agentdorm-seed" "$target/.agentdorm-seed"; then
+    return 0
+  fi
+  if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+    echo "dsh: image changed; refreshing $target from it ..." >&2
+  else
+    echo "dsh: seeding $target from the image (first start) ..." >&2
+  fi
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cp -a "$seed/." "$target/"
+}
+refresh_seed
 
 # Register OpenRouter as a custom pi-ai provider when its key is present.
 # settings.yaml holds only the apiKeyEnv reference; the key itself stays in

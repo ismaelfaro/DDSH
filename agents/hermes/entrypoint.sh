@@ -22,13 +22,24 @@ HERMES_INTERNAL_PORT="${HERMES_INTERNAL_PORT:-9119}"
 # Port socat listens on for the published-port NAT.
 HERMES_BRIDGE_PORT="${HERMES_BRIDGE_PORT:-19119}"
 
-# /opt/hermes may be a host bind mount (.deps). On first start it is empty, so
-# copy the image's seed venv into it once; afterwards anything Hermes installs
-# for itself persists across containers.
-if [ ! -x /opt/hermes/bin/hermes ]; then
-  echo "hermes: seeding /opt/hermes from the image (first start only) ..." >&2
-  cp -a /opt/hermes-seed/. /opt/hermes/
-fi
+# /opt/hermes may be a host bind mount (.deps). Fill it from the image's seed on
+# first start, and REPLACE it whenever the image was rebuilt (the seed stamp
+# differs): otherwise an upgrade would keep running the old copy persisted in
+# .deps. Replaced wholesale, not merged, so no stale package shadows a new one.
+refresh_seed() {
+  seed=/opt/hermes-seed target=/opt/hermes
+  if [ -f "$target/.agentdorm-seed" ] && cmp -s "$seed/.agentdorm-seed" "$target/.agentdorm-seed"; then
+    return 0
+  fi
+  if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+    echo "hermes: image changed; refreshing $target from it ..." >&2
+  else
+    echo "hermes: seeding $target from the image (first start) ..." >&2
+  fi
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cp -a "$seed/." "$target/"
+}
+refresh_seed
 
 # `setup-model` is the interactive two-step picker hermes.sh runs on a fresh
 # .harness; it writes the config and exits without starting anything.
@@ -43,6 +54,29 @@ fi
 # exist in here.
 hermes config set terminal.cwd /workspace >/dev/null 2>&1 || true
 echo "hermes: workspace ${HOST_WORKSPACE:-(host folder)} -> /workspace (and \$HOME)" >&2
+
+# Inside an AgentDorm, register the commons as an MCP tool server so the agent
+# gets typed `send`/`inbox`/`read`/`who` tools. The MCP client starts servers
+# with a minimal environment, so DORM_NAME is written into the entry itself;
+# rewriting it on every start keeps it right if the resident is renamed.
+if [ -n "${DORM_NAME:-}" ] && [ -x /usr/local/bin/dorm-mcp ]; then
+  /opt/hermes/bin/python - <<'PYEOF' || echo "hermes: could not register the dorm MCP server" >&2
+import os, pathlib, yaml
+path = pathlib.Path(os.environ.get("HERMES_HOME", "/hermes")) / "config.yaml"
+cfg = (yaml.safe_load(path.read_text()) if path.exists() else None) or {}
+servers = cfg.get("mcp_servers")
+if not isinstance(servers, dict):
+    servers = {}
+servers["dorm"] = {
+    "command": "/usr/local/bin/dorm-mcp",
+    "args": [],
+    "env": {"DORM_NAME": os.environ["DORM_NAME"], "DORM_DIR": "/dorm",
+            "PATH": "/usr/local/bin:/usr/bin:/bin"},
+}
+cfg["mcp_servers"] = servers
+path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
+PYEOF
+fi
 
 # Otherwise resolve provider + model from the environment and persist them to
 # $HERMES_HOME/config.yaml (see configure-model.sh for the rules).

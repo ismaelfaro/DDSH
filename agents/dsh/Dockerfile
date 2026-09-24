@@ -66,7 +66,8 @@ RUN --mount=type=cache,target=/pnpm-store,uid=1000,gid=1000 \
         --allow-build=node-pty --allow-build=koffi \
         --allow-build=protobufjs --allow-build=@google/genai \
         "@deepseek-ai/dsh@${DSH_VERSION}" \
-    && ./node_modules/.bin/dsh --version
+    && ./node_modules/.bin/dsh --version \
+    && date -u +%Y%m%dT%H%M%S.%N > /opt/dsh-seed/.agentdorm-seed
 
 COPY --chown=node:node entrypoint.sh /usr/local/bin/entrypoint.sh
 

@@ -59,11 +59,15 @@ ENV HERMES_VERSION=${HERMES_VERSION}
 
 # Built AT /opt/hermes, then copied to the seed: console-script shebangs bake
 # in the venv path, so the tree must be created where it will finally run.
+# [mcp] pulls the MCP SDK Hermes needs to load tool servers such as the dorm.
+# The .agentdorm-seed stamp tells the entrypoint when this layer was rebuilt,
+# so an upgraded image replaces the copy persisted in .deps.
 RUN uv venv /opt/hermes \
     && uv pip install --python /opt/hermes/bin/python \
-        "hermes-agent${HERMES_VERSION:+==${HERMES_VERSION}}" \
+        "hermes-agent[mcp]${HERMES_VERSION:+==${HERMES_VERSION}}" \
     && /opt/hermes/bin/hermes --version \
-    && cp -a /opt/hermes/. /opt/hermes-seed/
+    && cp -a /opt/hermes/. /opt/hermes-seed/ \
+    && date -u +%Y%m%dT%H%M%S.%N > /opt/hermes-seed/.agentdorm-seed
 
 COPY --chown=hermes:hermes entrypoint.sh configure-model.sh /usr/local/bin/
 

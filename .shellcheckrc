@@ -1,0 +1,4 @@
+# lib/*.sh set globals (AGENT_*, LAUNCH_*, RES_*) that other files read;
+# shellcheck analyses one file at a time and would flag every one as unused.
+disable=SC2034
+external-sources=true

@@ -1,0 +1,374 @@
+#!/usr/bin/env bash
+# Copyright 2026 AgentDorm contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+set -euo pipefail
+
+AD_VERSION="0.2.0"
+# Resolve through symlinks (shims in ~/.local/bin; macOS has no readlink -f).
+# No `case` in here: bash 3.2 mis-parses case patterns inside $(...).
+_src="${BASH_SOURCE[0]:-$0}"
+while [ -L "$_src" ]; do
+  _dir="$(cd "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [ "${_src#/}" = "$_src" ] && _src="$_dir/$_src"
+done
+AD_ROOT="$(cd "$(dirname "$_src")/.." && pwd)"
+export AD_ROOT
+
+for _lib in common yaml agent commons identity gate resident; do
+  # shellcheck source=/dev/null
+  . "$AD_ROOT/lib/$_lib.sh"
+done
+
+usage() {
+  cat <<'USAGE'
+agentdorm -- a house of AI agents, each in its own room.
+
+One-off agent in the current folder
+  agentdorm run <agent> [--port N] [--detach] [-- agent args]
+
+Residents: named agents with a domain, their own memory, and a fixed port
+  agentdorm new <name> --agent <agent> --description "..."
+                [--port N] [--workspace DIR] [--egress open|allowlist] [--allow a.com,b.org]
+  agentdorm up [name...]              start residents (all when none given)
+  agentdorm down [name...]            stop residents (all when none given)
+  agentdorm restart [name...]
+  agentdorm ls                        residents, their agent, port and state
+  agentdorm snapshot <name>           tarball of a resident's memory and settings
+  agentdorm fork <from> <to>          clone a resident to let it evolve separately
+
+Talking to them (you are "owner" in the commons)
+  agentdorm who                       everyone registered and what they do
+  agentdorm send <name|all> [-s subject] [message...]
+  agentdorm inbox                     messages residents sent you
+  agentdorm read [id|--all]
+
+Operating
+  agentdorm ps                        every AgentDorm container, with URLs
+  agentdorm url <name>                where to open it (OpenClaw: with token)
+  agentdorm logs <name> [-f] [--gate] container logs (--gate: egress decisions)
+  agentdorm shell <name> [cmd...]     a shell inside a running agent
+  agentdorm stop <name>               stop a resident or a `run` instance
+  agentdorm build [agent...] [--force]
+  agentdorm agents                    agents this checkout can run
+  agentdorm doctor                    check docker, keys, ports, state
+  agentdorm version
+
+Env: AGENTDORM_HOME (where residents/ and commons/ live; default: this checkout)
+USAGE
+}
+
+# --- helpers ---------------------------------------------------------------
+
+# A resident name or a container name -> container name.
+container_for() {
+  if [ -f "$(ad_resident_dir "$1")/resident.yaml" ]; then
+    ad_resident_container "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+need_arg() { [ "$#" -ge 2 ] && [ -n "$2" ] || ad_die "$1 needs a value"; }
+
+# --- commands --------------------------------------------------------------
+
+cmd_run() {
+  local agent="" port="" detach="" explicit="" slug
+  [ "$#" -gt 0 ] || ad_die "usage: agentdorm run <agent> [--port N] [--detach] [-- args]"
+  agent="$1"; shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -h|--help)
+        echo "usage: agentdorm run $agent [--port N] [--detach] [-- <$agent args>]"
+        echo "Runs $agent on the current folder. For $agent's own help: agentdorm run $agent -- --help"
+        return 0 ;;
+      --port)   need_arg "$@"; port="$2"; explicit=1; shift 2 ;;
+      --detach|-d) detach=1; shift ;;
+      --) shift; break ;;
+      *) break ;;
+    esac
+  done
+  ad_require_docker
+  ad_load_agent "$agent"
+  # The per-agent env names from before the CLI still work: HERMES_PORT, DSH_DETACH, ...
+  if [ -z "$port" ] && [ -n "$(ad_env "${AGENT_PREFIX}_PORT")" ]; then
+    port="$(ad_env "${AGENT_PREFIX}_PORT")"; explicit=1
+  fi
+  [ -n "$detach" ] || detach="$(ad_env "${AGENT_PREFIX}_DETACH")"
+  [ -n "$port" ] || port="$AGENT_PORT"
+  ad_is_number "$port" || ad_die "--port must be a number"
+
+  ad_ensure_image
+  port="$(ad_pick_port "$port" "$explicit")"
+  local state="$AGENT_DIR/.harness"
+  mkdir -p "$state"
+  [ -n "$AGENT_DEPS_MOUNT" ] && mkdir -p "$AGENT_DIR/.deps"
+  if command -v agent_pre_run >/dev/null 2>&1 && [ -z "$detach" ]; then
+    agent_pre_run "$state" "$AGENT_DIR/.deps"
+  fi
+
+  slug="$(ad_slug "$(basename "$PWD")")"
+  LAUNCH_NAME="$agent-$slug-$port"
+  LAUNCH_DORM_NAME="$agent-$slug"
+  LAUNCH_WORKSPACE="$PWD"
+  LAUNCH_STATE="$state"
+  LAUNCH_PORT="$port"
+  LAUNCH_DETACH="$detach"
+  LAUNCH_RESIDENT=""
+  LAUNCH_EGRESS="open"
+  LAUNCH_SUMMARY="$AGENT_TITLE working in $PWD"
+  ad_log "$AGENT_TITLE on $PWD -> http://localhost:$port$AGENT_URL_PATH"
+  ad_launch "$@"
+  [ -n "$detach" ] && ad_log "running in the background as $LAUNCH_NAME (stop: agentdorm stop $LAUNCH_NAME)"
+  return 0
+}
+
+cmd_new() {
+  local name="" agent="" desc="" port="" ws="" egress="open" allow=""
+  [ "$#" -gt 0 ] || ad_die "usage: agentdorm new <name> --agent <agent> --description \"...\""
+  name="$1"; shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --agent)       need_arg "$@"; agent="$2"; shift 2 ;;
+      --description) need_arg "$@"; desc="$2"; shift 2 ;;
+      --description-file) need_arg "$@"; [ -f "$2" ] || ad_die "no such file: $2"; desc="$(cat "$2")"; shift 2 ;;
+      --port)        need_arg "$@"; ad_is_number "$2" || ad_die "--port must be a number"; port="$2"; shift 2 ;;
+      --workspace)   need_arg "$@"; ws="$2"; shift 2 ;;
+      --egress)      need_arg "$@"; egress="$2"; shift 2 ;;
+      --allow)       need_arg "$@"; allow="$2"; shift 2 ;;
+      *) ad_die "unknown option for new: $1" ;;
+    esac
+  done
+  [ -n "$agent" ] || ad_die "--agent is required (one of: $(ad_agents | tr '\n' ' '))"
+  case "$egress" in open|allowlist) ;; *) ad_die "--egress must be open or allowlist" ;; esac
+  if [ -z "$desc" ] && [ -t 0 ]; then
+    echo "Describe $name's domain -- what it should become the best at. End with an empty line:" >&2
+    local line
+    while IFS= read -r line; do
+      [ -z "$line" ] && break
+      desc="${desc:+$desc
+}$line"
+    done
+  fi
+  [ -n "$desc" ] || ad_warn "no description: $name will ask you what to specialise in"
+  # shellcheck disable=SC2046
+  ad_resident_new "$name" "$agent" "$desc" "$port" "$ws" "$egress" $(printf '%s' "$allow" | tr ',' ' ')
+}
+
+cmd_up() {
+  local names n
+  ad_require_docker
+  if [ "$#" -gt 0 ]; then names="$*"; else names="$(ad_residents | tr '\n' ' ')"; fi
+  [ -n "${names// /}" ] || ad_die "no residents yet. Create one: agentdorm new <name> --agent hermes --description \"...\""
+  for n in $names; do ( ad_resident_up "$n" ) || ad_warn "$n did not start"; done
+}
+
+cmd_down() {
+  local names n
+  ad_require_docker
+  if [ "$#" -gt 0 ]; then names="$*"; else names="$(ad_residents | tr '\n' ' ')"; fi
+  for n in $names; do
+    [ -f "$(ad_resident_dir "$n")/resident.yaml" ] || { ad_warn "no resident '$n'"; continue; }
+    ad_resident_down "$n"
+  done
+}
+
+cmd_ls() {
+  local n status desc
+  printf '%-18s %-10s %-6s %-9s %-10s %s\n' NAME AGENT PORT STATE EGRESS DOMAIN
+  for n in $(ad_residents); do
+    ad_load_resident "$n"
+    status="$(ad_resident_status "$n" 2>/dev/null || echo "?")"
+    desc="$(printf '%s' "$RES_DESCRIPTION" | head -n 1 | cut -c1-60)"
+    printf '%-18s %-10s %-6s %-9s %-10s %s\n' "$n" "$RES_AGENT" "$RES_PORT" "$status" "$RES_EGRESS" "${desc:--}"
+  done
+}
+
+cmd_ps() {
+  ad_require_docker
+  local rows
+  rows="$(docker ps --filter "label=$AD_LABEL.agent" --format \
+    '{{.Names}}|{{.Label "agentdorm.agent"}}|{{.Label "agentdorm.resident"}}|{{.Label "agentdorm.port"}}|{{.Label "agentdorm.url-path"}}|{{.Status}}|{{.Label "agentdorm.workspace"}}')"
+  if [ -z "$rows" ]; then echo "(no AgentDorm containers running)"; return 0; fi
+  printf '%-30s %-10s %-34s %-16s %s\n' CONTAINER AGENT URL STATUS WORKSPACE
+  printf '%s\n' "$rows" | while IFS='|' read -r name agent _res port path status ws; do
+    printf '%-30s %-10s %-34s %-16s %s\n' "$name" "$agent" "http://localhost:$port$path" "$(printf '%s' "$status" | cut -c1-16)" "$ws"
+  done
+  docker ps --filter "label=$AD_LABEL.gate-for" --format '  gate {{.Names}} ({{.Status}})'
+}
+
+cmd_url() {
+  [ "$#" -eq 1 ] || ad_die "usage: agentdorm url <name>"
+  ad_require_docker
+  if [ -f "$(ad_resident_dir "$1")/resident.yaml" ]; then
+    ad_resident_url "$1"; return 0
+  fi
+  local agent port path
+  agent="$(docker inspect -f '{{index .Config.Labels "agentdorm.agent"}}' "$1" 2>/dev/null)" || ad_die "no resident or container named '$1'"
+  port="$(docker inspect -f '{{index .Config.Labels "agentdorm.port"}}' "$1")"
+  path="$(docker inspect -f '{{index .Config.Labels "agentdorm.url-path"}}' "$1")"
+  ad_load_agent "$agent"
+  if command -v agent_url >/dev/null 2>&1; then agent_url "$1" "$port"; else printf 'http://localhost:%s%s\n' "$port" "$path"; fi
+}
+
+cmd_logs() {
+  local name="" follow="" gate=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in -f|--follow) follow="-f"; shift ;; --gate) gate=1; shift ;; *) name="$1"; shift ;; esac
+  done
+  [ -n "$name" ] || ad_die "usage: agentdorm logs <name> [-f] [--gate]"
+  ad_require_docker
+  if [ -n "$gate" ]; then
+    docker logs $follow "$(ad_gate_name "$name")"
+  else
+    docker logs $follow "$(container_for "$name")"
+  fi
+}
+
+cmd_shell() {
+  [ "$#" -ge 1 ] || ad_die "usage: agentdorm shell <name> [cmd...]"
+  ad_require_docker
+  local c
+  c="$(container_for "$1")"; shift
+  if [ "$#" -eq 0 ]; then set -- bash; fi
+  if [ -t 0 ]; then exec docker exec -it "$c" "$@"; else exec docker exec -i "$c" "$@"; fi
+}
+
+cmd_stop() {
+  [ "$#" -ge 1 ] || ad_die "usage: agentdorm stop <name>..."
+  ad_require_docker
+  local n
+  for n in "$@"; do
+    if [ -f "$(ad_resident_dir "$n")/resident.yaml" ]; then
+      ad_resident_down "$n"
+    else
+      docker rm -f "$n" >/dev/null 2>&1 && ad_log "$n stopped" || ad_warn "no container named $n"
+    fi
+  done
+}
+
+cmd_snapshot() {
+  [ "$#" -eq 1 ] || ad_die "usage: agentdorm snapshot <name>"
+  local dir out
+  ad_load_resident "$1"
+  dir="$RES_DIR"
+  mkdir -p "$dir/snapshots"
+  out="$dir/snapshots/$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  [ "$(ad_resident_status "$1" 2>/dev/null)" = "running" ] \
+    && ad_warn "$1 is running; the snapshot may catch a file mid-write. For a clean one: agentdorm down $1 first."
+  tar -czf "$out" -C "$dir" resident.yaml .harness
+  ad_log "snapshot: $out ($(du -h "$out" | cut -f1))"
+  ad_log "restore: agentdorm down $1 && tar -xzf $out -C $dir"
+}
+
+cmd_fork() {
+  [ "$#" -ge 2 ] || ad_die "usage: agentdorm fork <from> <to> [--port N]"
+  local from="$1" to="$2" port="" src dst
+  shift 2
+  [ "${1:-}" = "--port" ] && { need_arg "$@"; port="$2"; }
+  ad_valid_resident_name "$to" || ad_die "bad resident name: $to"
+  ad_load_resident "$from"
+  src="$RES_DIR"
+  dst="$(ad_resident_dir "$to")"
+  [ -e "$dst" ] && ad_die "resident '$to' already exists"
+  ad_load_agent "$RES_AGENT"
+  [ -n "$port" ] || port="$(ad_next_resident_port "$AGENT_PORT")" || ad_die "no free port; pass --port"
+  mkdir -p "$dst"
+  # The fork keeps everything it has learned, under a new name and port.
+  [ -d "$src/.harness" ] && cp -R "$src/.harness" "$dst/.harness"
+  sed -e "s/^name: .*/name: $to/" -e "s/^port: .*/port: $port/" "$src/resident.yaml" > "$dst/resident.yaml"
+  ad_log "forked $from -> $to (port $port). Its identity file still says '$from'; the name in the dorm is '$to'."
+  ad_log "start it with: agentdorm up $to"
+}
+
+cmd_build() {
+  local force="" agents="" a
+  ad_require_docker
+  for a in "$@"; do case "$a" in --force) force="--force" ;; --all) ;; *) agents="$agents $a" ;; esac; done
+  [ -n "$agents" ] || agents="$(ad_agents | tr '\n' ' ')"
+  for a in $agents; do ad_load_agent "$a"; ad_ensure_image $force; done
+}
+
+cmd_agents() {
+  local a
+  printf '%-10s %-24s %-6s %s\n' AGENT TITLE PORT UPSTREAM
+  for a in $(ad_agents); do
+    ad_load_agent "$a"
+    printf '%-10s %-24s %-6s %s\n' "$a" "$AGENT_TITLE" "$AGENT_PORT" "$AGENT_UPSTREAM"
+  done
+}
+
+cmd_doctor() {
+  local ok=1 k n
+  check() { if eval "$2" >/dev/null 2>&1; then printf '  ok    %s\n' "$1"; else printf '  FAIL  %s%s\n' "$1" "${3:+ -- $3}"; ok=0; fi; }
+  echo "agentdorm $AD_VERSION  ($AD_ROOT)"
+  echo "host"
+  check "docker installed" "command -v docker" "install Docker Desktop or Docker Engine"
+  check "docker daemon responding" "docker info" "start Docker"
+  check "commons writable" "[ -w \"\$(ad_commons_dir)\" ]"
+  echo "model provider keys (names only)"
+  for k in OPENROUTER_API_KEY ANTHROPIC_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY MINIMAX_API_KEY NOUS_API_KEY; do
+    if [ -n "$(ad_env "$k")" ]; then printf '  set   %s\n' "$k"; else printf '  -     %s\n' "$k"; fi
+  done
+  echo "images"
+  for n in $(ad_agents); do
+    ad_load_agent "$n"
+    if docker image inspect "$AGENT_IMAGE" >/dev/null 2>&1; then printf '  ok    %s\n' "$AGENT_IMAGE"
+    else printf '  -     %s (built on first run)\n' "$AGENT_IMAGE"; fi
+  done
+  echo "residents"
+  for n in $(ad_residents); do
+    ad_load_resident "$n"
+    if [ "$(ad_resident_status "$n")" = "running" ]; then printf '  up    %s on %s\n' "$n" "$RES_PORT"
+    elif ad_port_busy "$RES_PORT"; then printf '  FAIL  %s: port %s taken by %s\n' "$n" "$RES_PORT" "$(ad_port_holder "$RES_PORT")"; ok=0
+    else printf '  down  %s (port %s free)\n' "$n" "$RES_PORT"; fi
+  done
+  [ "$ok" = 1 ] && echo "all good" || { echo "some checks failed"; return 1; }
+}
+
+# --- dispatch --------------------------------------------------------------
+
+cmd="${1:-help}"
+[ "$#" -gt 0 ] && shift
+case "$cmd" in
+  run)             cmd_run "$@" ;;
+  new)             cmd_new "$@" ;;
+  up)              cmd_up "$@" ;;
+  down)            cmd_down "$@" ;;
+  restart)         cmd_down "$@"; cmd_up "$@" ;;
+  ls|residents)    cmd_ls "$@" ;;
+  ps)              cmd_ps "$@" ;;
+  url)             cmd_url "$@" ;;
+  logs)            cmd_logs "$@" ;;
+  shell|exec)      cmd_shell "$@" ;;
+  stop)            cmd_stop "$@" ;;
+  snapshot)        cmd_snapshot "$@" ;;
+  fork)            cmd_fork "$@" ;;
+  who)             ad_dorm_host owner who ;;
+  send)            ad_dorm_host owner send "$@" ;;
+  inbox)           ad_dorm_host owner inbox ;;
+  read)            ad_dorm_host owner read "$@" ;;
+  board)           ad_dorm_host owner board ;;
+  build)           cmd_build "$@" ;;
+  agents)          cmd_agents ;;
+  doctor)          cmd_doctor ;;
+  version|--version|-V) echo "agentdorm $AD_VERSION" ;;
+  help|-h|--help)  usage ;;
+  *)
+    # `agentdorm hermes` as a shorthand for `agentdorm run hermes`.
+    if [ -f "$AD_ROOT/agents/$cmd/agent.conf" ]; then cmd_run "$cmd" "$@"
+    else ad_die "unknown command '$cmd' (see: agentdorm help)"; fi
+    ;;
+esac

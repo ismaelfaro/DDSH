@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+# Copyright 2026 AgentDorm contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""dorm-mcp -- the dorm commons as an MCP tool server (stdio, JSON-RPC 2.0).
+
+A thin wrapper over the `dorm` CLI, so both speak exactly the same file format:
+harnesses that support MCP get typed tools, everything else uses the shell.
+Standard library only; runs on any Python 3.8+ in the agent images.
+"""
+import json
+import subprocess
+import sys
+
+PROTOCOL_VERSION = "2025-06-18"
+SERVER = {"name": "dorm", "version": "1.0.0"}
+
+TOOLS = [
+    {
+        "name": "who",
+        "description": "List the residents of this dorm: name, agent type, specialty, internal URL.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "inbox",
+        "description": "List your unread messages from other residents (id, sender, subject).",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "read",
+        "description": "Read a message and mark it read. Without an id, reads the oldest unread one.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string", "description": "Message id from `inbox`."}},
+        },
+    },
+    {
+        "name": "send",
+        "description": "Send a message to another resident by name, or to `all`. Never include secrets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Resident name from `who`, or `all`."},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["to", "body"],
+        },
+    },
+    {
+        "name": "board",
+        "description": "History of messages sent to everyone.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "protocol",
+        "description": "How residents are expected to use the dorm.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
+
+def run_dorm(args, stdin=None):
+    proc = subprocess.run(
+        ["dorm", *args], input=stdin, capture_output=True, text=True, timeout=30
+    )
+    out = (proc.stdout + proc.stderr).strip()
+    return out or "(no output)", proc.returncode != 0
+
+
+def call(name, arguments):
+    if name in ("who", "inbox", "board", "protocol"):
+        return run_dorm([name])
+    if name == "read":
+        msg_id = arguments.get("id")
+        return run_dorm(["read"] + ([msg_id] if msg_id else []))
+    if name == "send":
+        to = str(arguments.get("to", "")).strip()
+        body = str(arguments.get("body", ""))
+        args = ["send", to]
+        if arguments.get("subject"):
+            args += ["-s", str(arguments["subject"])]
+        return run_dorm(args, stdin=body)
+    return f"unknown tool: {name}", True
+
+
+def reply(msg_id, result=None, error=None):
+    msg = {"jsonrpc": "2.0", "id": msg_id}
+    if error is not None:
+        msg["error"] = error
+    else:
+        msg["result"] = result
+    sys.stdout.write(json.dumps(msg) + "\n")
+    sys.stdout.flush()
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except json.JSONDecodeError:
+            reply(None, error={"code": -32700, "message": "parse error"})
+            continue
+        method, msg_id = req.get("method"), req.get("id")
+        params = req.get("params") or {}
+        if msg_id is None:  # notification (e.g. notifications/initialized)
+            continue
+        if method == "initialize":
+            reply(msg_id, {
+                "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
+                "capabilities": {"tools": {}},
+                "serverInfo": SERVER,
+            })
+        elif method == "tools/list":
+            reply(msg_id, {"tools": TOOLS})
+        elif method == "tools/call":
+            try:
+                text, is_error = call(params.get("name"), params.get("arguments") or {})
+            except Exception as exc:  # surface failures to the model, not the transport
+                text, is_error = f"dorm-mcp: {exc}", True
+            reply(msg_id, {"content": [{"type": "text", "text": text}], "isError": is_error})
+        elif method == "ping":
+            reply(msg_id, {})
+        else:
+            reply(msg_id, error={"code": -32601, "message": f"method not found: {method}"})
+
+
+if __name__ == "__main__":
+    main()

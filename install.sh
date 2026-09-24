@@ -89,19 +89,27 @@ case "$SCRIPT_SRC" in
   *) SCRIPT_DIR="$PWD" ;;
 esac
 
-if [ -d "$SCRIPT_DIR/agents/dsh" ] && [ -f "$SCRIPT_DIR/agents/hermes/hermes.sh" ]; then
+if [ -f "$SCRIPT_DIR/bin/agentdorm" ] && [ -d "$SCRIPT_DIR/agents" ]; then
   log "using checkout at $SCRIPT_DIR"
   if [ "$SCRIPT_DIR" != "$DEST" ]; then
     # Copy the checkout WITHOUT state: .harness/.deps hold credentials,
     # sessions and GBs of dependencies; they get rebuilt per agent.
     command -v tar >/dev/null 2>&1 || { echo "error: tar not found" >&2; exit 1; }
     mkdir -p "$DEST"
-    log "syncing to $DEST (excluding .git, .harness, .deps) ..."
-    tar -cf - --exclude=.git --exclude=.harness --exclude=.deps --exclude=.DHC -C "$SCRIPT_DIR" . \
-      | tar -xf - -C "$DEST"
+    if git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      # Exactly the source: tracked files plus new ones not yet committed, and
+      # nothing .gitignore excludes (state, residents, agent scaffold, junk).
+      log "syncing source files to $DEST ..."
+      (cd "$SCRIPT_DIR" && git ls-files -z --cached --others --exclude-standard) \
+        | (cd "$SCRIPT_DIR" && tar --null -T - -cf -) | tar -xf - -C "$DEST"
+    else
+      log "syncing to $DEST (excluding agent state) ..."
+      tar -cf - --exclude=.git --exclude=.harness --exclude=.deps --exclude=.DHC \
+        --exclude=./residents --exclude=./commons -C "$SCRIPT_DIR" . | tar -xf - -C "$DEST"
+    fi
   fi
   SRC="$DEST"
-elif [ -d "$DEST/agents/dsh" ]; then
+elif [ -f "$DEST/bin/agentdorm" ] || [ -d "$DEST/agents/dsh" ]; then
   log "using existing install at $DEST"
   if command -v git >/dev/null 2>&1 && [ -d "$DEST/.git" ]; then
     log "updating $DEST ..."
@@ -140,21 +148,23 @@ else
 fi
 
 # --- 4. Executable bits (lost by some zips / Windows checkouts) ---
-chmod +x "$SRC/install.sh" \
-  "$SRC/agents/dsh/dsh.sh" \
-  "$SRC/agents/hermes/hermes.sh" \
-  "$SRC/agents/openclaw/openclaw.sh" \
-  "$SRC/agents/openhands/openhands.sh" 2>/dev/null || true
+chmod +x "$SRC/install.sh" "$SRC/bin/agentdorm" "$SRC/dorm/dorm" "$SRC/dorm/dorm-mcp" 2>/dev/null || true
+for runner in "$SRC"/agents/*/*.sh; do chmod +x "$runner" 2>/dev/null || true; done
 
 # --- 5. Shims on PATH ---
+# `agentdorm` is the CLI; one shim per agent (hermes, dsh, ...) keeps the old
+# one-word commands working -- each is `agentdorm run <agent>`.
 mkdir -p "$BIN_DIR"
-for pair in "dsh:agents/dsh/dsh.sh" "hermes:agents/hermes/hermes.sh" \
-            "openclaw:agents/openclaw/openclaw.sh" "openhands:agents/openhands/openhands.sh"; do
-  name="${pair%%:*}"
-  rel="${pair#*:}"
-  ln -sfn "$SRC/$rel" "$BIN_DIR/$name"
+ln -sfn "$SRC/bin/agentdorm" "$BIN_DIR/agentdorm"
+LINKED="agentdorm"
+for conf in "$SRC"/agents/*/agent.conf; do
+  a="$(basename "$(dirname "$conf")")"
+  if [ -f "$SRC/agents/$a/$a.sh" ]; then
+    ln -sfn "$SRC/agents/$a/$a.sh" "$BIN_DIR/$a"
+    LINKED="$LINKED $a"
+  fi
 done
-log "shims linked in $BIN_DIR: dsh hermes openclaw openhands"
+log "shims linked in $BIN_DIR: $LINKED"
 
 # --- 6. PATH wiring ---
 path_on_path() {
@@ -181,13 +191,15 @@ else
   fi
 fi
 
-# --- 7. Done: how to run instances ---
+# --- 7. Done ---
 echo
-echo "Installed. Each folder you launch from becomes an isolated instance:"
+echo "Installed. Try:"
 echo
-echo "  export OPENROUTER_API_KEY=sk-or-...   # or your provider key"
-echo "  cd /path/to/project-a && hermes       # instance 1"
-echo "  cd /path/to/project-b && hermes       # instance 2 (next free port)"
+echo "  export OPENROUTER_API_KEY=sk-or-...        # or your provider key"
+echo "  cd /path/to/project && hermes              # one agent on this folder"
 echo
-echo "hermes auto-bumps a busy default port; dsh/openclaw/openhands take an"
-echo "explicit one: DSH_PORT=3090 dsh, OPENCLAW_PORT=9200 openclaw, OPENHANDS_PORT=9200 openhands."
+echo "  agentdorm new quantum --agent hermes \\"
+echo "    --description \"Quantum computing: Qiskit, transpilation, error mitigation\""
+echo "  agentdorm up                               # start every resident"
+echo "  agentdorm ps                               # where each one is"
+echo "  agentdorm doctor                           # if anything looks wrong"

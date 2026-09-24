@@ -45,7 +45,8 @@ ENV OPENCLAW_VERSION=${OPENCLAW_VERSION}
 # the global bin shims, so the tree must be created where it will finally run.
 RUN npm install -g --no-fund --no-audit "openclaw@${OPENCLAW_VERSION}" \
     && openclaw --version \
-    && cp -a /opt/openclaw/. /opt/openclaw-seed/
+    && cp -a /opt/openclaw/. /opt/openclaw-seed/ \
+    && date -u +%Y%m%dT%H%M%S.%N > /opt/openclaw-seed/.agentdorm-seed
 
 COPY --chown=node:node entrypoint.sh /usr/local/bin/entrypoint.sh
 

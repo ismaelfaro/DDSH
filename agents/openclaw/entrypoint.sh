@@ -22,13 +22,24 @@ OPENCLAW_INTERNAL_PORT="${OPENCLAW_INTERNAL_PORT:-18789}"
 # Port socat listens on for the published-port NAT.
 OPENCLAW_BRIDGE_PORT="${OPENCLAW_BRIDGE_PORT:-18790}"
 
-# /opt/openclaw may be a host bind mount (.deps). On first start it is empty, so
-# copy the image's seed install into it once; afterwards plugins and updates
-# OpenClaw installs for itself persist across containers.
-if [ ! -x /opt/openclaw/bin/openclaw ]; then
-  echo "openclaw: seeding /opt/openclaw from the image (first start only) ..." >&2
-  cp -a /opt/openclaw-seed/. /opt/openclaw/
-fi
+# /opt/openclaw may be a host bind mount (.deps). Fill it from the image's seed on
+# first start, and REPLACE it whenever the image was rebuilt (the seed stamp
+# differs): otherwise an upgrade would keep running the old copy persisted in
+# .deps. Replaced wholesale, not merged, so no stale package shadows a new one.
+refresh_seed() {
+  seed=/opt/openclaw-seed target=/opt/openclaw
+  if [ -f "$target/.agentdorm-seed" ] && cmp -s "$seed/.agentdorm-seed" "$target/.agentdorm-seed"; then
+    return 0
+  fi
+  if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+    echo "openclaw: image changed; refreshing $target from it ..." >&2
+  else
+    echo "openclaw: seeding $target from the image (first start) ..." >&2
+  fi
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  cp -a "$seed/." "$target/"
+}
+refresh_seed
 
 echo "openclaw: workspace ${HOST_WORKSPACE:-(host folder)} -> /workspace" >&2
 
@@ -86,8 +97,18 @@ consent_to_plugins() {
   done
 }
 
+# Inside an AgentDorm, register the commons as an MCP tool server. The entry
+# carries DORM_NAME because MCP servers start with a minimal environment.
+register_dorm_mcp() {
+  [ -n "${DORM_NAME:-}" ] && [ -x /usr/local/bin/dorm-mcp ] || return 0
+  openclaw mcp set dorm "{\"command\":\"/usr/local/bin/dorm-mcp\",\"args\":[],\"env\":{\"DORM_NAME\":\"${DORM_NAME}\",\"DORM_DIR\":\"/dorm\",\"PATH\":\"/usr/local/bin:/usr/bin:/bin\"}}" \
+    >/dev/null 2>&1 || echo "openclaw: could not register the dorm MCP server" >&2
+}
+
 if [ "${1:-}" = "gateway" ]; then
   shift
+
+  register_dorm_mcp
 
   if [ ! -f "$OPENCLAW_STATE_DIR/.agentdorm-plugins-accepted" ]; then
     consent_to_plugins
