@@ -44,7 +44,8 @@ USER node
 
 # Harness version baked into the image. Change it with:
 #   docker build --build-arg DSH_VERSION=0.1.0-rc.8 -t dsh-web:local .
-ARG DSH_VERSION=latest
+# Pinned to the release AgentDorm was last verified with; bump deliberately.
+ARG DSH_VERSION=0.1.5-rc.3
 ENV DSH_VERSION=${DSH_VERSION}
 
 # Installed once here into a SEED tree: `npx @deepseek-ai/dsh` re-resolves the

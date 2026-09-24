@@ -54,7 +54,8 @@ USER hermes
 
 # Hermes version baked into the image seed. Change it with:
 #   docker build --build-arg HERMES_VERSION=0.20.6 -t hermes-web:local .
-ARG HERMES_VERSION=
+# Pinned to the release AgentDorm was last verified with; bump deliberately.
+ARG HERMES_VERSION=0.19.0
 ENV HERMES_VERSION=${HERMES_VERSION}
 
 # Built AT /opt/hermes, then copied to the seed: console-script shebangs bake

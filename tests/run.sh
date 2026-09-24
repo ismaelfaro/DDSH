@@ -304,6 +304,22 @@ test_resident_ports_skip_claimed() {
   [ "$p1" != "$p2" ] || { echo "both residents got port $p1" >&2; return 1; }
 }
 
+# ------------------------------------------------------------------ hooks
+
+test_dsh_url_hook_reads_token_from_logs() {
+  ad_load_agent dsh
+  docker() { printf 'dsh: serving\ndsh web: http://127.0.0.1:3080/?token=abc_DEF-123\n'; }
+  eq "http://localhost:3180/?token=abc_DEF-123" "$(agent_url c 3180)"
+  docker() { printf 'starting\n'; }
+  eq "http://localhost:3180/" "$(agent_url c 3180)"
+}
+
+test_openclaw_url_hook_keeps_fragment() {
+  ad_load_agent openclaw
+  docker() { printf '{"ok":true,"url":"http://127.0.0.1:18789/#token=t0k3n","port":18789}\n'; }
+  eq "http://localhost:18800/#token=t0k3n" "$(agent_url c 18800)"
+}
+
 # ------------------------------------------------------------------ CLI
 
 test_cli_surface() {
