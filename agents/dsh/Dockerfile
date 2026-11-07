@@ -14,7 +14,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM node:22-bookworm-slim
+# dsh 0.2+ requires Node >=24.9.
+FROM node:24-bookworm-slim
 
 # Tooling the agent harness expects in its shell (bash tool, git, search, http),
 # plus Python 3 for data/science work (Qiskit, numpy, matplotlib).
@@ -45,7 +46,7 @@ USER node
 # Harness version baked into the image. Change it with:
 #   docker build --build-arg DSH_VERSION=0.1.0-rc.8 -t dsh-web:local .
 # Pinned to the release AgentDorm was last verified with; bump deliberately.
-ARG DSH_VERSION=0.1.5-rc.3
+ARG DSH_VERSION=0.2.2-rc.1
 ENV DSH_VERSION=${DSH_VERSION}
 
 # Installed once here into a SEED tree: `npx @deepseek-ai/dsh` re-resolves the
